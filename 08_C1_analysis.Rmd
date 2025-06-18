@@ -1,0 +1,58 @@
+---
+title: "08_C1_analysis"
+author: "Aubrey Odom"
+date: "2024-12-09"
+output: html_document
+---
+
+# Setup
+
+```{R setup}
+suppressPackageStartupMessages({
+  library(tidyverse)
+})
+save_folder <- "~/altcells/singlecellseq/vitalia_scs_aro/figures_tm/deg_tables"
+
+```
+
+```{R}
+# Read in DEG data
+stem <- "/projectnb/altcells/singlecellseq/vitalia_scs_aro/processed_data"
+p_c_deg <- read.csv(file.path(stem, "cluster_deg_p_vs_control.csv"))
+p_pd_deg <- read.csv(file.path(stem, "cluster_deg_p_vs_pd.csv"))
+pd_c_deg <- read.csv(file.path(stem, "cluster_deg_pd_vs_control.csv"))
+
+# Read in single cell data
+data_reclustered <- readRDS("~/altcells/singlecellseq/vitalia_scs_aro/processed_data/data_reclustered.RDS")
+```
+
+# 1. Spp1 regulation
+1. Check whether spp1 is upregulated in DEG analyses, and which clusters (we would expect upregulation in VSMC clusters).
+
+```{R}
+compare_spp1 <- function(in_table) {
+  which_deg <- deparse(substitute(in_table))
+  table_out <- in_table |>
+    filter(gene == "Spp1") |>
+    select(-X) |>
+    relocate(cluster) |>
+    arrange(desc(abs(avg_log2FC))) |>
+    mutate(across(-gene, ~ round(.x, 2)))
+  write.csv(table_out, file.path(save_folder, paste0("spp1_", which_deg, ".csv")))
+  return(table_out)
+}
+
+compare_spp1(p_c_deg)
+compare_spp1(p_pd_deg)
+compare_spp1(pd_c_deg)
+```
+
+# 2.Cluster 1 - mixed macrophage and VSMC markers
+
+Compare cluster 0 (control) and cluster 1 (PTX) to verify expression level of macrophage and VSMC markers
+> if they have upregulation of macrophage-associated markers like CD68, LGALS3,
+> meanwhile cluster 1 should also have downregulation of vsmc contractile markers like acta2 myh11, cnn1
+
+
+
+

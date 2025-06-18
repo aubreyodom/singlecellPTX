@@ -1,0 +1,287 @@
+---
+title: "02_dimension_reduction"
+author: "Aubrey Odom"
+date: "2024-07-09"
+output: html_document
+---
+
+This file continues the data analysis from 01_data_processing.Rmd given the integrated/processed data.
+```{R}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(dplyr)
+  library(Seurat)
+  library(patchwork)
+  library(ggplot2)
+  # /satijalab/seurat-data
+})
+
+fig_folder <- "~/altcells/singlecellseq/vitalia_scs_aro/figures"
+```
+
+# Import data
+The four groups...
+"PDtreatment" 5 mg/kg PTX + 5 mg/kg DEX 
+"Ptreatment" 5 mg/kg PTX
+"Dtreatment" 5 mg/kg DEX
+"control" 5% DMSO CTL
+
+These are mouse aortic endothelial cells
+- Common set of "molecular transcriptomic RNA features"
+- In this case, likely genes.
+```{R}
+data_combined <- readRDS("~/altcells/singlecellseq/vitalia_scs_aro/processed_data/data_combined.RDS")
+```
+
+# Identification of highly variable features (feature selection)
+* Note that the data has already been scaled
+
+- calculate a subset of features that exhibit high cell-to-cell variation in the dataset (i.e, they are highly expressed in some cells, and lowly expressed in others)
+- Highlights biological signal
+
+"identify a subset of features (e.g., genes) exhibiting high variability across cells, and therefore represent heterogeneous features to prioritize for downstream analysis"
+
+Read more in depth here:
+https://www.sciencedirect.com/science/article/pii/S0092867419305598?via%3Dihub#:~:text=Feature%20selection%20for%20individual%20datasets
+
+```{R}
+var_features_dat <- FindVariableFeatures(data_combined, selection.method = "vst", nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(var_features_dat), 10)
+
+top10
+```
+
+```{R}
+# plot variable features with labels
+plot1 <- VariableFeaturePlot(var_features_dat)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot2 +
+  theme_bw() +
+  labs(title = "Variability of genes across treatments",
+       subtitle = "Top 10 genes are highlighted")
+
+ggsave(file.path(fig_folder, "highly_variable.png"), width = 5, height = 4)
+```
+
+# Perform linear dimension reduction
+
+## Glimpse of pos vs negative features
+```{R}
+# Use 10 dimensions, looking at the scree plot
+print(data_combined[["pca"]], dims = 1:10, nfeatures = 5)
+```
+
+## Visualization of PCA dim loadings
+
+### All
+```{R}
+VizDimLoadings(data_combined, dims = 1:20, reduction = "pca")
+
+ggsave(file.path(fig_folder, "dimension_loadings.png"), width = 10, height = 10)
+```
+### Select first few
+```{R}
+VizDimLoadings(data_combined, dims = 1:2, reduction = "pca")
+
+ggsave(file.path(fig_folder, "dimension_loadings_initial.png"), width = 5, height = 6)
+```
+
+
+## Dimension plot (PC 1 and PC 2)
+```{R}
+# Finding a color palette
+paletteer::palettes_d_names %>% filter(length >= 17,
+                                       length <20, 
+                                       type == "qualitative")
+
+```
+
+```{R}
+DimPlot(data_combined, reduction = "pca", alpha = 0.5)[[1]] +
+  paletteer::scale_color_paletteer_d(
+    "tvthemes::gravityFalls") +
+  xlab("PC 1") +
+  ylab("PC 2") +
+  labs(title = "Principal component dimensions",
+       subtitle = "PCs 1 and 2")
+ggsave(file.path(fig_folder, "dimension_plot_trt_1_2.png"), width = 6, height = 4)
+```
+
+## Dimension plot (PC 3 and 4)
+```{R}
+DimPlot(data_combined, reduction = "pca", 
+        dims = c(3, 4),
+        alpha = 0.5)[[1]] +
+  paletteer::scale_color_paletteer_d(
+    "tvthemes::gravityFalls") +
+  xlab("PC 3") +
+  ylab("PC 4") +
+  labs(title = "Principal component dimensions",
+       subtitle = "PCs 3 and 4")
+ggsave(file.path(fig_folder, "dimension_plot_trt_3_4.png"), width = 6, height = 4)
+```
+
+## Heatmap of dimension
+- Both cells and features are ordered according to their PCA scores
+- Setting cells to a number plots the extreme cells which dramatically speeds plotting for large datasets
+
+My takeaways
+- The cell names aren't all listed, only a few are which is potentially misleading
+- Differentiation significantly decreases as you get closer to 6 PC
+- Based on pos vs. negative expected items, tagln is negative and is highly negatively expressed (purple = negative)
+```{R}
+png(file.path(fig_folder, "dim_heatmap.png"),
+    res = 300, units = "in", width = 10, height = 10)
+DimHeatmap(data_combined, dims = 1:20, cells = 500,
+           reduction = "pca",
+           nfeatures =50,
+           balanced = TRUE)
+dev.off()
+
+#ggsave(file.path(fig_folder, "dim_heatmap.png"),
+#       width = 10, height = 10)
+
+```
+
+
+# Cell clustering prep
+
+## Determine dimensionality (scree plot)
+
+Looks like 10-15 is a good cutoff
+Looking for where the PCs really taper off in variability, which really slows down around 13
+```{R}
+ElbowPlot(data_combined, ndims = 30) +
+  labs(title = "PCA 'scree plot'") +
+  ggplot2::xlab("Number of PCs") +
+  theme_bw()
+
+ggsave(file.path(fig_folder, "scree_std_dev.png"), width = 6, height = 4)
+```
+
+## Percent var explained
+
+https://github.com/satijalab/seurat/issues/982
+```{R}
+mat <- Seurat::GetAssayData(data_combined, layer = "RNA",
+                            slot = "scale.data")
+
+# Get the total variance:
+total_variance <- sum(matrixStats::rowVars(mat))
+total_variance
+
+# Only the total variance of variable genes
+data_combined@reductions$pca@misc$total.variance
+
+pca <- data_combined[["pca"]]
+eigValues = (pca@stdev)^2  ## EigenValues
+varExplained = eigValues / total_variance
+
+# Total percent explained with 200 PCs
+sum(varExplained * 100)
+
+# Total percent explained with 20 PCs
+sum(varExplained[1:20] * 100)
+
+# Looking at difference in pct explained from previous PC
+abs(diff(varExplained * 100)) |> round(3)
+```
+### Pct var elbow plot all 200
+```{R}
+pca_pct_df <- data.frame(npc = seq_along(varExplained),
+           pctvar = varExplained * 100) %>%
+  mutate(cumPCA = cumsum(pctvar))
+
+pca_pct_df %>%
+  ggplot2::ggplot(aes(x = npc, y = cumPCA)) +
+  geom_point(col = "black", size = 1) +
+  geom_line(col = "grey") +
+  labs(title = "PCA 'scree plot'",
+       subtitle = "Percent variability explained") +
+  xlab("Number of PCs") +
+  ylab("% Cumulative variability explained") +
+  theme_bw()
+
+ggsave(file.path(fig_folder, "scree_pct_var_explained.png"), width = 6, height = 4)
+```
+
+### Pct var elbow plot getting small
+```{R}
+sub_varExp <- varExplained[1:30]
+pca_pct_df <- data.frame(npc = seq_along(sub_varExp),
+           pctvar = sub_varExp * 100) %>%
+  mutate(cumPCA = cumsum(pctvar))
+
+pca_pct_df %>%
+  ggplot2::ggplot(aes(x = npc, y = cumPCA)) +
+  geom_point(col = "black", size = 1) +
+  geom_line(col = "grey") +
+  labs(title = "PCA 'scree plot'",
+       subtitle = "Percent variability explained") +
+  xlab("Number of PCs") +
+  ylab("% Cumulative variability explained") +
+  theme_bw()
+
+ggsave(file.path(fig_folder, "scree_pct_var_explained_1_30.png"), width = 6, height = 4)
+```
+
+# Cluster cells
+```{R}
+set.seed(1)
+n_pca_dim <- 10
+
+data_clustered <- FindNeighbors(data_combined, reduction = "pca", 
+                                dims = 1:n_pca_dim,
+                                n.trees = 100) %>%
+  FindClusters(resolution = 0.4, random.seed = 92) %>%
+  RunUMAP(reduction = "pca",
+          dims = 1:n_pca_dim,
+          seed.use = 50)
+``` 
+
+## UMAP plots
+
+### By cluster
+```{R}
+DimPlot(data_clustered, reduction = "umap", label = "TRUE",
+        alpha = 0.5) +
+  ggplot2::labs(x = "UMAP Axis 1", y = "UMAP Axis 2",
+                title = "Combined UMAP Plot",
+                subtitle = "Clusters across treatments") +
+  theme_bw()  +
+  paletteer::scale_color_paletteer_d("ggthemes::manyeys")
+
+ggsave(file.path(fig_folder, "UMAP_clusters.png"), width = 6, height = 4)
+```
+
+### By treatment
+```{R}
+DimPlot(data_clustered, reduction = "umap", 
+        group.by = "Treatment", label = TRUE, alpha = 0.5) +
+  ggplot2::labs(x = "UMAP Axis 1", y = "UMAP Axis 2",
+                title = "Combined UMAP Plot",
+                subtitle = "All treatments") +
+  theme_bw() +
+  paletteer::scale_color_paletteer_d("tvthemes::gravityFalls")
+```
+
+### Treatment by grid
+```{R}
+DimPlot(data_clustered, reduction = "umap", 
+        group.by = "Treatment", label = TRUE, alpha = 0.5) +
+  ggplot2::labs(x = "UMAP Axis 1", y = "UMAP Axis 2",
+                title = "Combined UMAP Plot",
+                subtitle = "All treatments") +
+  theme_bw() +
+  paletteer::scale_color_paletteer_d("tvthemes::gravityFalls") +
+  facet_wrap(~Treatment)
+ggsave(file.path(fig_folder, "UMAP_trt_grid.png"), width = 6, height = 4)
+```
+
+## Export data
+```{R}
+saveRDS(data_clustered,
+        file = "~/altcells/singlecellseq/vitalia_scs_aro/processed_data/data_clustered.RDS")
+```

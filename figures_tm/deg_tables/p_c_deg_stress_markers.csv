@@ -1,0 +1,6 @@
+"gene","cluster","avg_log2FC","p_val_adj"
+"Gadd45a",2,7.8,0
+"Gadd45a",8,-3,0.027
+"Gadd45a",12,-1.6,0
+"Hspa1a",1,-3.8,0
+"Hspa1a",3,-5.4,0.054

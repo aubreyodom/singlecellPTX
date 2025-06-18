@@ -1,0 +1,230 @@
+---
+title: "DEG Analysis"
+author: "Aubrey Odom"
+date: "2024-11-21"
+output: html_document
+---
+
+# Setup
+```{R}
+suppressPackageStartupMessages({
+  library(tidyverse)
+})
+save_folder <- "~/altcells/singlecellseq/vitalia_scs_aro/figures_tm/deg_tables"
+```
+
+# Read in data
+
+## Cluster based
+```{R}
+stem <- "/projectnb/altcells/singlecellseq/vitalia_scs_aro/processed_data"
+p_c_deg <- read.csv(file.path(stem, "cluster_deg_p_vs_control.csv"))
+p_pd_deg <- read.csv(file.path(stem, "cluster_deg_p_vs_pd.csv"))
+pd_c_deg <- read.csv(file.path(stem, "cluster_deg_pd_vs_control.csv"))
+```
+
+## Non cluster based
+
+/projectnb/altcells/singlecellseq/vitalia_scs_aro/processed_data/
+
+```{R}
+NC_p_c_deg <- read.csv(file.path(stem, "deg_p_vs_control.csv"))
+NC_pd_c_deg <- read.csv(file.path(stem, "deg_pd_vs_control.csv"))
+NC_p_d_deg <- read.csv(file.path(stem, "deg_p_vs_d.csv"))
+NC_d_c_deg <- read.csv(file.path(stem, "deg_d_vs_control.csv"))
+```
+
+# Calcification markers
+
+```{R}
+selected_calc_markers <- c("BMP2", "WNT", "NOTCH1", "RUNX2",
+                           "MGP", "SOX9", "SPP1") |>
+  stringr::str_to_sentence()
+
+filt_deg <- function(deg_tibble, genes_interest) {
+  out <- deg_tibble |>
+    filter(gene %in% genes_interest & abs(avg_log2FC) > 0.5 &
+             p_val_adj < 0.1) |>
+    mutate(avg_log2FC = round(avg_log2FC, 1),
+           p_val_adj = round(p_val_adj, 3)) |>
+    select(gene, cluster, avg_log2FC, gene, p_val_adj) |>
+    arrange(gene)
+  write.csv(out, file.path(save_folder,
+            paste0(deparse(substitute(deg_tibble)), "_",
+                  deparse(substitute(genes_interest)),
+            ".csv")), row.names = FALSE)
+  return(out)
+}
+
+```
+
+## PD vs C
+```{R}
+filt_deg(pd_c_deg, selected_calc_markers)
+```
+## P vs PD
+```{R}
+filt_deg(p_pd_deg, selected_calc_markers)
+```
+## P vs C
+```{R}
+filt_deg(p_c_deg, selected_calc_markers)
+```
+# Inflammatory markers
+
+```{R}
+inflam_markers <- c("CXCL10", "CXCL1", "CCL2", "IL6", "IL1b", "TNF") |>
+  stringr::str_to_sentence()
+```
+
+## PD vs C
+```{R}
+filt_deg(pd_c_deg, inflam_markers)
+```
+## P vs PD
+```{R}
+filt_deg(p_pd_deg, inflam_markers)
+```
+## P vs C
+```{R}
+filt_deg(p_c_deg, inflam_markers)
+```
+# Pro-thrombosis
+
+```{R}
+thromb_markers <- c("F3", "F2", "F5", "Serpine1") |>
+  stringr::str_to_sentence()
+
+filt_deg(pd_c_deg, thromb_markers)
+
+filt_deg(p_pd_deg, thromb_markers)
+
+filt_deg(p_c_deg, thromb_markers)
+```
+# Stress markers
+
+```{R}
+stress_markers <- c("HSPA1A", "HSPA1B", "DUSP1", "GADD45A") |>
+  stringr::str_to_sentence()
+
+filt_deg(pd_c_deg, stress_markers)
+
+filt_deg(p_pd_deg, stress_markers)
+
+filt_deg(p_c_deg, stress_markers)
+```
+# Matrix remodeling markers
+
+```{R}
+matrix_remodeling <- c("COL1A1", "COL3A1", "MMP2", "MMP9") |>
+  stringr::str_to_sentence()
+
+filt_deg(pd_c_deg, matrix_remodeling)
+
+filt_deg(p_pd_deg, matrix_remodeling)
+
+filt_deg(p_c_deg, matrix_remodeling)
+```
+# VSMC Plasticity markers
+```{R}
+matrix_remodeling <- c("ACTA2", "ITGA1", "ITGB1") |>
+  stringr::str_to_sentence()
+
+filt_deg(pd_c_deg, matrix_remodeling)
+
+filt_deg(p_pd_deg, matrix_remodeling)
+
+filt_deg(p_c_deg, matrix_remodeling)
+```
+
+# Plot - volcano plot
+```{R}
+markers <- p_c_deg
+
+# Add a column for significance
+markers$Significance <- "Not Significant"
+markers$Significance[markers$avg_log2FC > 0.25 & markers$p_val_adj < 0.05] <- "Upregulated"
+markers$Significance[markers$avg_log2FC < -0.25 & markers$p_val_adj < 0.05] <- "Downregulated"
+
+markers$Label <- ifelse(markers$gene %in% selected_calc_markers, paste0(markers$gene, "_", markers$cluster), NA)
+
+# Create the plot
+volcano_plot <- ggplot(markers, aes(x = avg_log2FC, y = -log10(p_val_adj), color = Significance)) +
+  geom_point(alpha = 0.2, size = 2) +
+  scale_color_manual(values = c("Upregulated" = "red", "Downregulated" = "blue", "Not Significant" = "grey")) +
+  theme_bw() +
+  labs(
+    title = "Volcano Plot",
+    subtitle = "Calcification genes",
+    x = "Log2 Fold Change",
+    y = "-Log10 Adjusted P-Value"
+  )
+
+# Add labels for specific genes
+volcano_plot_2 <- volcano_plot +
+   ggrepel::geom_text_repel(
+    data = subset(markers, Significance != "Not Significant"),
+    aes(label = Label, color = "black"),
+    # color = "white",
+    size = 3,
+    max.overlaps = 20
+  )
+
+# Show the plot
+print(volcano_plot_2)
+
+
+```
+
+
+# Heatmap
+
+Heatmap, that takes the DEG findings, and then puts a label with the log fold change and color the boxes according to up- or down-regulation of genes.
+
+```{R}
+gene_list <- c(
+  # These genes are those to be validated - microcalcification; remodeling
+  # PRIMARY
+  "SPP1", "MGP", "MMP9", "TIMP1", "TIMP2", "COL1A2", "ACTA2", "ITGA1", "CSF1", "TP53", "BCL2L1",
+  # SUPPORTING
+  "RUNX2", "ALPL", "CD68", "IL1B", "TNF", "ICAM1", "VCAM1", "LGALS3BP") |>
+  str_to_title()
+
+# Combine dataframes with necessary covariates
+df_list <- list(NC_p_c_deg, NC_pd_c_deg, NC_d_c_deg, NC_p_d_deg) |>
+  set_names(c("PTX vs. Control", "PTX + DEX vs. Control",
+              "DEX vs. Control", "PTX vs. DEX")) |>
+  lapply(function(x) select(x, avg_log2FC, p_val_adj, X))
+combined_df <- lapply(names(df_list),
+                      function(name) mutate(df_list[[name]], Source = name)) |>
+  bind_rows() |>
+  # Round p-values for display
+  rename(Comparison = Source, Gene = X) |>
+  mutate("Avg log2 FC" = round(`avg_log2FC`, 1),
+         direction = ifelse(`avg_log2FC` > 0, yes = "Pos", no = "Neg")) |>
+  filter(Gene %in% gene_list,
+         p_val_adj <= 0.05)
+
+
+# Create the heatmap
+ggplot(combined_df, aes(x = Comparison, y = Gene, fill = `direction`)) +
+  geom_tile(color = "white") +
+  scale_fill_manual(
+    values = c("Pos" = "red", "Neg" = "lightblue"), # Set colors for levels
+    name = "Direction"
+  ) +
+  theme_classic() +
+  geom_text(aes(label = `Avg log2 FC`), color = "black",
+            size = 4, na.rm = TRUE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Differential gene expression results",
+       x = "DEG Comparison", y = "Gene",
+       caption = "** Non-significant results removed",
+       subtitle = "Genes for validation in mice")
+
+ggsave(file.path(save_folder, paste0("DEG_heatmap_genes_for_validation.png")),
+       width = 5,
+       height = 5)
+
+  
+```

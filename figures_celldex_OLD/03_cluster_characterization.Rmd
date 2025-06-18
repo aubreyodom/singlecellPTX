@@ -1,0 +1,213 @@
+---
+title: "03_cluster_characterization"
+author: "Aubrey Odom"
+date: "2024-08-28"
+output: html_document
+---
+
+# Setup
+```{R}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(dplyr)
+  library(Seurat)
+  library(SingleR)
+  library(celldex)
+  library(BiocParallel)
+  # /satijalab/seurat-data
+})
+
+fig_folder <- "~/altcells/singlecellseq/vitalia_scs_aro/figures"
+```
+
+# Load data
+```{R}
+data_clustered <- readRDS("~/altcells/singlecellseq/vitalia_scs_aro/processed_data/data_clustered.RDS")
+```
+
+# SingleR for cluster characterization
+
+https://bioconductor.org/books/devel/SingleRBook/
+
+## Reference dataset
+```{R}
+mouse_ref <- fetchReference("mouse_rnaseq", "2024-02-26")
+norm_counts <- SeuratObject::GetAssayData(data_clustered)
+predictions <- SingleR::SingleR(test = norm_counts, assay.type.test = 1,
+                                ref = mouse_ref, labels = mouse_ref$label.fine,
+                                BPPARAM = MulticoreParam(
+                                  workers = BiocParallel::multicoreWorkers()))
+```
+
+```{R}
+data_labeled <- data_clustered
+data_clustered[["SingleR.labels"]] <- predictions$labels
+data_clustered[["SingleR.pruned"]] <- predictions$pruned.labels
+
+table(predictions$labels)
+
+all_labels <- as.data.frame(colData(mouse_ref))[, c("label.main", "label.fine")] |>
+  distinct()
+```
+
+## Annotation Diagnostics
+
+### heatmap of SingleR scores
+Ideally, we would see unambiguous assignments where, for any given cell, one label’s score is clearly larger than the others.
+```{R}
+## Choosing which to show
+ind <- sort(table(predictions$labels)) > 1000
+sub_cells <- names(sort(table(predictions$labels))[ind])
+
+png(file.path(fig_folder, "singleR_score_heatmap_1.png"), width = 8, height = 5,
+    units = "in", res = 300)
+
+# Most highly abundant cell types
+which_cell_types <- predictions$labels %in% sub_cells
+plotScoreHeatmap(predictions, cells.use = which_cell_types,
+                 labels.use = sub_cells, show_colnames = FALSE)
+dev.off()
+
+png(file.path(fig_folder, "singleR_score_heatmap_2.png"), width = 8, height = 5,
+    units = "in", res = 300)
+
+# Less abundance (<100 cells in given category)
+sub_cells_low <- names(sort(table(predictions$labels))[!ind])
+which_cell_types_low <- predictions$labels %in% sub_cells_low
+plotScoreHeatmap(predictions, cells.use = which_cell_types_low,
+                 labels.use = sub_cells_low, show_colnames = FALSE)
+
+dev.off()
+
+# All
+png(file.path(fig_folder, "singleR_score_heatmap_3.png"), width = 8, height = 5,
+    units = "in", res = 300)
+
+plotScoreHeatmap(predictions, show_colnames = FALSE)
+dev.off()
+```
+
+### Deltas
+Identify poor-quality or ambiguous assignments based on the per-cell “delta”, i.e., the difference between the score for the assigned label and the median across all labels for each cell. Our assumption is that most of the labels in the reference are not relevant to any given cell.
+```{R}
+plotDeltaDistribution(predictions)
+
+to.remove <- pruneScores(predictions, min.diff.med = 0.05)
+table(Label = predictions$labels, Removed=to.remove)
+
+# Replace pruned labels
+predictions$pruned.labels <- predictions$labels
+predictions$pruned.labels[to.remove] <- NA
+
+plotDeltaDistribution(predictions)
+ggsave(file.path(fig_folder, "singleR_delta_dist.png"), width = 8, height = 5)
+
+```
+
+- From chapter 4 of the SingleR book
+## Make new cluster types
+```{R}
+cluster_matched_cells <- tibble(cluster = Idents(data_clustered), data_clustered[["SingleR.labels"]]) |>
+  dplyr::rename("label.fine" = "SingleR.labels") |>
+  left_join(all_labels, by = c("label.fine"))
+
+summary_fine <- cluster_matched_cells |>
+  arrange(cluster) |>
+  group_by(cluster, label.fine) |>
+  summarise(num_each = n())
+
+summary_main <- cluster_matched_cells |>
+  arrange(cluster) |>
+  group_by(cluster, label.main) |>
+  summarise(num_each = n()) |>
+  arrange(cluster, desc(num_each))
+```
+
+## Plotting the assignments (FOR CLUSTER ASSIGNMENTS)
+
+### Main labels
+```{R}
+library(randomcoloR)
+set.seed(28)
+n <- 20
+palette <- distinctColorPalette(n)
+names(palette) <- unique(summary_main$label.main)
+
+ summary_main |>
+    dplyr::mutate(proportion = count / sum(count))
+    ggplot2::ggplot(aes(x = cluster, y = num_each, fill = label.main)) +
+    geom_bar(stat = "identity") +
+    ggplot2::scale_fill_manual(values = palette) +
+    ggplot2::theme_bw() +
+    labs(main = "Proportion of cell types in each cluster") +
+    ggplot2::xlab("Cluster number") +
+    ggplot2::ylab("Total cluster count")
+
+ggsave(file.path(fig_folder, "barplot_main_labels.png"))
+```
+
+### Fine labels
+```{R}
+set.seed(28)
+n_len <- unique(summary_fine$label.fine)
+palette2 <- distinctColorPalette(length(n_len))
+names(palette2) <- n_len
+
+for (clust in unique(Idents(data_clustered))) {
+  summary_fine |>
+    filter(cluster == clust) |>
+    ggplot2::ggplot(aes(x = cluster, y = num_each, fill = label.fine)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    ggplot2::scale_fill_manual(values = palette2) +
+    ggplot2::theme_bw() +
+    labs(main = "Proportion of finer cell types in a given cluster") +
+    ggplot2::xlab("Cluster number") +
+    ggplot2::ylab("Total cluster count")
+  ggsave(paste0(fig_folder, "/barplot_find_labels_cluster", clust, ".png"), height = 3, width = 5, units = "in")
+}
+```
+
+# Plotting (for pubs)
+
+## Stacked bar plot with prop of cells by treatment
+```{R}
+## Order the cell types
+order_celltypes <- data_clustered@meta.data |>
+  group_by(SingleR.pruned) |>
+  summarise(count = n()) |>
+  arrange((count)) |>
+  pull(SingleR.pruned)
+
+plotting_data <- data_clustered@meta.data |>
+  mutate("Cell type" = factor(SingleR.pruned, levels = order_celltypes))
+
+set.seed(20)
+n <- 40
+palette <- distinctColorPalette(n)
+names(palette) <- unique(plotting_data$SingleR.pruned)
+
+plotting_data |>
+  filter(!is.na(SingleR.pruned)) |>
+    ggplot2::ggplot(aes(x = Treatment, fill = `Cell type`)) +
+    geom_bar(stat = "count") +
+    ggplot2::scale_fill_manual(values = palette) +
+    ggplot2::theme_bw() +
+    labs(main = "Proportion of finer cell types in a given treatment") +
+    ggplot2::xlab("Treatment") +
+    ggplot2::ylab("Count") +
+  ggplot2::coord_flip() +
+  ggplot2::labs(title = "Proportion of cell type by treatment")
+
+ggsave(file.path(fig_folder, "celltypes_trt_prop.png"), height = 5, width = 8, units = "in")
+```
+
+
+# Export Label data
+```{R}
+dat_save <- "~/altcells/singlecellseq/vitalia_scs_aro/processed_data"
+saveRDS(predictions, file.path(dat_save, "pred_cell_labels.RDS"))
+saveRDS(data_clustered, file.path(dat_save, "data_labelled.RDS"))
+
+```
+
+

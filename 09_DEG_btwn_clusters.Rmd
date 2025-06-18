@@ -1,0 +1,45 @@
+---
+title: "DEG Analysis between clusters"
+author: "Aubrey Odom"
+date: "2024-12-16"
+output: html_document
+---
+
+# Setup
+```{R}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(seurat)
+})
+save_folder <- "~/altcells/singlecellseq/vitalia_scs_aro/figures_tm/deg_tables"
+```
+
+## Read in the data
+```{R}
+data_reclustered <- readRDS("~/altcells/singlecellseq/vitalia_scs_aro/processed_data/data_reclustered.RDS")
+
+```
+
+## Cluster differences across trt groups
+```{R}
+deg_results <- FindMarkers(
+  object = data_reclustered,
+  ident.1 = "1", # Group 1
+  ident.2 = "4", # Group 2
+  assay = DefaultAssay(data_reclustered), # Using the SCT assay
+  logfc.threshold = 0.25, # Log-fold change threshold
+  min.pct = 0.1, # Minimum percentage of cells expressing the gene
+  test.use = "MAST",
+  latent.vars = c("nCount_SCT", "nFeature_SCT") # Adjust for sequencing depth and detected genes
+)
+```
+
+```{R}
+deg_results |>
+  arrange(desc(abs(avg_log2FC))) |>
+  write.csv(file.path(save_folder, "DEG_c1_c4_alltrt.csv"))
+```
+
+
+
+

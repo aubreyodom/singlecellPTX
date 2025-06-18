@@ -1,0 +1,271 @@
+---
+title: "03_cluster_characterization"
+author: "Aubrey Odom"
+date: "2024-08-28"
+output: html_document
+---
+
+USING FACS DATA (not droplet)
+
+# Setup
+```{R setup}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(dplyr)
+  library(Seurat)
+  library(SingleR)
+  library(celldex)
+  library(BiocParallel)
+  library(SingleCellExperiment)
+  # /satijalab/seurat-data
+})
+
+fig_folder <- "~/altcells/singlecellseq/vitalia_scs_aro/figures_tm"
+```
+
+# Load data
+```{R}
+data_clustered <- readRDS("~/altcells/singlecellseq/vitalia_scs_aro/processed_data/data_clustered.RDS")
+```
+
+# SingleR for cluster characterization
+
+Note: This script uses the tabula muris dataset
+
+https://bioconductor.org/books/devel/SingleRBook/
+
+## Tabula muris 
+
+- Using droplet for better single-cell resolution
+
+```{R droplet}
+drop_loc <- "/projectnb/altcells/tabula_muris/00_facs_raw_data/FACS"
+
+# Read in annotation data
+annotations <- read.csv(file.path(drop_loc, "..", "annotations_FACS.csv"))
+
+# What cell types are present in the droplet data
+annotations |>
+  distinct(cell_ontology_class, tissue)
+
+# Read in the data
+
+all_organs <- c("Heart", "Aorta", "Lung", "Brain_Non-Myeloid")
+organ_files<- file.path(drop_loc, paste0(all_organs, "-counts.csv"))
+
+fix_df <- function(x_num) {
+  x <- as.data.frame(organ_counts[[x_num]])
+  colnames(x) <- stringr::str_remove_all(colnames(x), "^\\d+\\.")
+  colnames(x) <- paste0(all_organs[x_num], "_", colnames(x))
+  rownames(x) <- x[, 1] |> unlist()
+  x <- x[, -1]
+  return(x)
+}
+
+organ_counts <- plyr::alply(organ_files, 1, function(x) data.table::fread(x, sep = ",", header = TRUE), .progress = "text") |>
+  magrittr::set_names(all_organs)
+
+organ_counts_fixed <- plyr::llply(seq_along(all_organs), fix_df, .progress = "text")
+
+combined_dfs <- do.call(cbind, args = organ_counts_fixed) |>
+  as.data.frame()
+
+colnames(combined_dfs) <- stringr::str_remove_all(colnames(combined_dfs), "^\\d+\\.")
+```
+
+### Preparation for classification
+```{R}
+# Any non-brain
+
+annotations |>
+  filter(tissue %in% c("Heart", "Aorta", "Lung", "Brain_Non-Myeloid")) |>
+  dim()
+
+# Ensure match for heart tissue
+heart_annot <- annotations |>
+  filter(tissue %in% c("Heart", "Aorta", "Lung") |
+           tissue == "Brain_Non-Myeloid" & cell_ontology_class == "brain pericyte") |>
+  mutate(cell = paste0(tissue, "_", cell))
+
+# Filter the expression matrix to keep only the cells present in the annotations
+common_cells <- intersect(colnames(combined_dfs), heart_annot$cell)
+
+# Subset the heart_counts matrix based on common cells
+counts_filtered <- combined_dfs[, common_cells]
+annot_heart_filt <- heart_annot %>%
+  filter(cell %in% common_cells)
+
+# Check that the number of cells matches now
+ncol(counts_filtered) == nrow(annot_heart_filt)
+
+heart_sce <- SingleCellExperiment::SingleCellExperiment(
+  assays = list(counts = counts_filtered),
+  colData = annot_heart_filt
+)
+
+logcounts(heart_sce) <- log1p(counts(heart_sce))
+heart_sce$label <- annot_heart_filt$cell_ontology_class
+```
+
+## Run predictions
+```{R}
+norm_counts <- SeuratObject::GetAssayData(data_clustered)
+predictions <- SingleR::SingleR(test = norm_counts,
+                                ref = heart_sce, labels = heart_sce$label,
+                                BPPARAM = MulticoreParam(
+                                  workers = BiocParallel::multicoreWorkers()))
+```
+
+## View predictions
+```{R}
+table(predictions$labels)
+```
+
+----------------------------------------------------------
+
+```{R}
+data_labeled <- data_clustered
+data_clustered[["SingleR.labels"]] <- predictions$labels
+data_clustered[["SingleR.pruned"]] <- predictions$pruned.labels
+
+table(predictions$labels)
+```
+
+## Annotation Diagnostics
+
+### heatmap of SingleR scores
+Ideally, we would see unambiguous assignments where, for any given cell, one label’s score is clearly larger than the others.
+```{R}
+## Choosing which to show
+ind <- sort(table(predictions$labels)) > 1000
+sub_cells <- names(sort(table(predictions$labels))[ind])
+
+png(file.path(fig_folder, "singleR_score_heatmap_1.png"), width = 8, height = 5,
+    units = "in", res = 300)
+
+# Most highly abundant cell types
+which_cell_types <- predictions$labels %in% sub_cells
+plotScoreHeatmap(predictions, cells.use = which_cell_types,
+                 labels.use = sub_cells, show_colnames = FALSE)
+dev.off()
+
+png(file.path(fig_folder, "singleR_score_heatmap_2.png"), width = 8, height = 5,
+    units = "in", res = 300)
+
+# Less abundance (<100 cells in given category)
+sub_cells_low <- names(sort(table(predictions$labels))[!ind])
+which_cell_types_low <- predictions$labels %in% sub_cells_low
+plotScoreHeatmap(predictions, cells.use = which_cell_types_low,
+                 labels.use = sub_cells_low, show_colnames = FALSE)
+
+dev.off()
+
+# All
+png(file.path(fig_folder, "singleR_score_heatmap_3.png"), width = 8, height = 5,
+    units = "in", res = 300)
+
+plotScoreHeatmap(predictions, show_colnames = FALSE)
+dev.off()
+```
+
+### Deltas
+Identify poor-quality or ambiguous assignments based on the per-cell “delta”, i.e., the difference between the score for the assigned label and the median across all labels for each cell. Our assumption is that most of the labels in the reference are not relevant to any given cell.
+```{R}
+plotDeltaDistribution(predictions)
+
+to.remove <- pruneScores(predictions, min.diff.med = 0.01)
+table(Label = predictions$labels, Removed=to.remove)
+
+# Replace pruned labels
+predictions$pruned.labels <- predictions$labels
+predictions$pruned.labels[to.remove] <- NA
+
+plotDeltaDistribution(predictions)
+ggsave(file.path(fig_folder, "singleR_delta_dist_FACS.png"), width = 8, height = 5)
+
+```
+
+- From chapter 4 of the SingleR book
+## Make new cluster types
+```{R}
+cluster_matched_cells <- tibble(cluster = Idents(data_clustered), data_clustered[["SingleR.labels"]])
+
+summary_main <- cluster_matched_cells |>
+  arrange(cluster) |>
+  group_by(cluster, SingleR.labels) |>
+  summarise(num_each = n()) |>
+  arrange(cluster, desc(num_each))
+
+summary_main
+```
+
+## Plotting the assignments (FOR CLUSTER ASSIGNMENTS)
+
+### Main labels
+```{R}
+library(randomcoloR)
+set.seed(20)
+n <- length(unique(summary_main$SingleR.labels))
+palette <- distinctColorPalette(n)
+names(palette) <- unique(summary_main$SingleR.labels)
+
+ summary_main |>
+    dplyr::mutate(proportion = num_each / sum(num_each)) |>
+    ggplot2::ggplot(aes(x = cluster, y = num_each, fill = SingleR.labels)) +
+    geom_bar(stat = "identity") +
+    ggplot2::scale_fill_manual(values = palette) +
+    ggplot2::theme_bw() +
+    labs(main = "Proportion of cell types in each cluster") +
+    ggplot2::xlab("Cluster number") +
+    ggplot2::ylab("Total cluster count") +
+   theme(legend.position = "bottom") +
+   labs(title = "Proportion of cell types by cluster across treatments",
+        subtitle = "Tabula muris dataset - FACS - heart, aorta, lung, non-myeloid brain")
+
+ggsave(file.path(fig_folder, "barplot_main_labels_FACS.png"),
+        width = 9, height = 5, units = "in")
+```
+
+
+# Plotting (for pubs)
+
+## Stacked bar plot with prop of cells by treatment
+```{R}
+## Order the cell types
+order_celltypes <- data_clustered@meta.data |>
+  group_by(SingleR.pruned) |>
+  summarise(count = n()) |>
+  arrange((count)) |>
+  pull(SingleR.pruned)
+
+plotting_data <- data_clustered@meta.data |>
+  mutate("Cell type" = factor(SingleR.pruned, levels = order_celltypes))
+
+set.seed(20)
+n <- 40
+palette <- distinctColorPalette(n)
+names(palette) <- unique(plotting_data$SingleR.pruned)
+
+plotting_data |>
+  filter(!is.na(SingleR.pruned)) |>
+    ggplot2::ggplot(aes(x = Treatment, fill = `Cell type`)) +
+    geom_bar(stat = "count") +
+    ggplot2::scale_fill_manual(values = palette) +
+    ggplot2::theme_bw() +
+    ggplot2::xlab("Treatment") +
+    ggplot2::ylab("Count") +
+  ggplot2::coord_flip() +
+  ggplot2::labs(title = "Proportion of cell type by treatment",
+                subtitle = "Tabula muris dataset") +
+   theme(legend.position = "bottom")
+
+ggsave(file.path(fig_folder, "celltypes_trt_prop.png"), height = 5, width = 8, units = "in")
+```
+
+
+# Export Label data
+```{R}
+dat_save <- "~/altcells/singlecellseq/vitalia_scs_aro/processed_data"
+saveRDS(predictions, file.path(dat_save, "pred_cell_labels_TM_FACS.RDS"))
+saveRDS(data_clustered, file.path(dat_save, "data_labelled_TM_FACS.RDS"))
+```

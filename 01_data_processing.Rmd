@@ -1,0 +1,168 @@
+---
+title: "SCS Analysis"
+author: "Aubrey Odom"
+date: "2024-07-08"
+output: html_document
+---
+# Initial exploration
+
+- Looked for all files in folders of interest:
+ls -LR outs/ > all_outs_files.txt
+
+/projectnb/altcells/singlecellseq/Data/Combined_2023-06-06_2023-08-15_ChitaliaV/JA_CV_0522_4_control/all_outs_files.txt
+
+## Identifying the various outputs.
+
+web_summary.html
+metrics_summary.csv
+Gives an overview of the number of cells, mean reads, median genes per cell (10X genomics CellRanger output)
+
+raw_feature_bc_matrix
+raw_feature_bc_matrix.h5
+
+filtered_feature_bc_matrix
+filtered_feature_bc_matrix.h5
+
+cloupe.cloupe
+From cell ranger, "The .cloupe file can then be imported into Loupe Browser v7.0 for data visualization and further exploration."
+
+molecule_info.h5
+
+# Setup
+```{R setup}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(dplyr)
+  library(Seurat)
+  library(patchwork)
+  library(ggplot2)
+  # /satijalab/seurat-data
+})
+fig_folder <- "~/altcells/singlecellseq/vitalia_scs_aro/figures_tm"
+```
+
+## Import data
+The four groups...
+"PDtreatment" 5 mg/kg PTX + 5 mg/kg DEX 
+"Ptreatment" 5 mg/kg PTX
+"Dtreatment" 5 mg/kg DEX
+"control" 5% DMSO CTL
+
+
+ORIGINAL READ COUNTS OF CELLS (from web_summary.html)
+
+PTreatment - 20,791
+PDTreatment - 4,243
+DTreatment - 6,011
+control - 4,996
+```{R}
+stem <- "/projectnb/altcells/singlecellseq/Data/Combined_2023-06-06_2023-08-15_ChitaliaV"
+conditions <- list.files(stem)
+cond_names <- sapply(conditions, function(x) stringr::str_split_i(x, "_", 5))
+names(conditions) <- cond_names
+path_to_matrix <- "outs/filtered_feature_bc_matrix"
+
+this_folder <- conditions[1]
+
+read_in_data <- function(this_folder) {
+  path_to_data <- file.path(stem, this_folder, path_to_matrix)
+  
+  raw_counts <- Read10X(path_to_data, gene.column = 2, cell.column = 1,
+                        unique.features = TRUE, strip.suffix = FALSE)
+  # Quality CONTROL - downsample to min(5000, num)
+  down_num <- min(5000, ncol(raw_counts))
+  ds_ind <- sample(size = down_num, x = ncol(raw_counts), replace = FALSE)
+  # Samples on the columns
+  raw_counts_ds <- raw_counts[, ds_ind]
+  this_trt <- stringr::str_split_i(this_folder, "_", 5)
+  meta_data <- data.frame(Treatment = rep(this_trt, ncol(raw_counts_ds)), 
+                          row.names = colnames(raw_counts_ds))
+  sobject <- CreateSeuratObject(counts = raw_counts_ds, min.cells = 0, min.features = 0,
+                                project = this_trt,
+                                meta.data = meta_data) |>
+    SCTransform(vst.flavor = "v2", verbose = FALSE)
+}
+
+data_list <- plyr::alply(conditions, 1, read_in_data, .progress = "text",
+                         .dims = TRUE)
+
+data_list
+all_counts <- sapply(seq_along(data_list),
+       function(x) nrow(data_list[[x]]@assays$SCT@counts)) |>
+  min()
+
+all_values <- sapply(seq_along(data_list),
+       function(x) 
+         rownames(data_list[[x]]@assays$SCT@counts)) |>
+  unlist() |>
+  unique()
+
+features <- SelectIntegrationFeatures(object.list = data_list)
+```
+# Analysis
+
+## Perform integration
+```{R}
+data_anchors <- data_list |>
+  PrepSCTIntegration(assay = "SCT") |>
+  FindIntegrationAnchors(anchor.features = features, normalization.method = "SCT")
+data_combined_pre <- IntegrateData(anchorset = data_anchors,
+                                   features.to.integrate = all_values,
+                                   normalization.method = "SCT")
+```
+
+# Identification of highly variable features (feature selection)
+* Note that the data has already been scaled
+
+- calculate a subset of features that exhibit high cell-to-cell variation in the dataset (i.e, they are highly expressed in some cells, and lowly expressed in others)
+- Highlights biological signal
+
+"identify a subset of features (e.g., genes) exhibiting high variability across cells, and therefore represent heterogeneous features to prioritize for downstream analysis"
+
+Read more in depth here:
+https://www.sciencedirect.com/science/article/pii/S0092867419305598?via%3Dihub#:~:text=Feature%20selection%20for%20individual%20datasets
+
+## Find variable features for PCA
+```{R}
+# Set the default assay to integrated
+DefaultAssay(data_combined_pre) <- "integrated"
+
+var_features_dat <- data_combined_pre |>
+  # Find variable features for PCA
+  FindVariableFeatures(selection.method = "vst", nfeatures = 2000, assay = "integrated")
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(var_features_dat), 10)
+
+top10
+```
+# plot variable features with labels
+```{R}
+plot1 <- VariableFeaturePlot(var_features_dat)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot2 +
+  theme_bw() +
+  labs(title = "Variability of genes across treatments",
+       subtitle = "Top 10 genes are highlighted")
+
+ggsave(file.path(fig_folder, "highly_variable.png"), width = 5, height = 4)
+```
+
+## Perform PCA
+```{R}
+data_combined <- RunPCA(var_features_dat, npcs = 200, verbose = FALSE, assay = "integrated")
+```
+
+## Export data
+```{R}
+#saveRDS(data_combined,
+#        file = "~/altcells/singlecellseq/vitalia_scs_aro/processed_data/data_combined.RDS")
+```
+
+## Export a much smaller version...
+```{R}
+# Remove the SCT and RNA assays
+data_combined[["RNA"]] <- data_combined[["SCT"]] <- NULL
+saveRDS(data_combined,
+        file = "~/altcells/singlecellseq/vitalia_scs_aro/processed_data/data_combined.RDS")
+```

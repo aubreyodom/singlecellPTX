@@ -1,0 +1,102 @@
+---
+title: "SCS Analysis"
+author: "Aubrey Odom"
+date: "2024-07-08"
+output: html_document
+---
+# Initial exploration
+
+- Looked for all files in folders of interest:
+ls -LR outs/ > all_outs_files.txt
+
+/projectnb/altcells/singlecellseq/Data/Combined_2023-06-06_2023-08-15_ChitaliaV/JA_CV_0522_4_control/all_outs_files.txt
+
+## Identifying the various outputs.
+
+web_summary.html
+metrics_summary.csv
+Gives an overview of the number of cells, mean reads, median genes per cell (10X genomics CellRanger output)
+
+raw_feature_bc_matrix
+raw_feature_bc_matrix.h5
+
+filtered_feature_bc_matrix
+filtered_feature_bc_matrix.h5
+
+cloupe.cloupe
+From cell ranger, "The .cloupe file can then be imported into Loupe Browser v7.0 for data visualization and further exploration."
+
+molecule_info.h5
+
+# Evan's instructions for running SCS analysis
+- Art and Xutao are single cell experienced users
+
+1) Run Cell Ranger (already done by SC core)
+2) Utilize the Seurat vignette to visualize the data
+3) Identify the cells
+4) Find the interesting cells
+5) Dissect the cluster dynamics
+6) Perform differential expression between those two clusters,
+		○ So take the members of the clusters
+		○ What genes are differentially expressed
+
+Note: Seurat is easy to use, they're testy and clunky
+
+# Setup
+```{R}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(dplyr)
+  library(Seurat)
+  library(patchwork)
+  library(ggplot2)
+  # /satijalab/seurat-data
+})
+
+```
+
+## Import data
+The four groups...
+"PDtreatment" 5 mg/kg PTX + 5 mg/kg DEX 
+"Ptreatment" 5 mg/kg PTX
+"Dtreatment" 5 mg/kg DEX
+"control" 5% DMSO CTL
+
+```{R}
+stem <- "~/altcells/singlecellseq/vitalia_scs_aro/processed_data"
+all_inputs <- list.files(stem, pattern = "*_filtseurat.RDS")
+
+read_in_data <- function(path_to_data) {
+  sobject <- readRDS(path_to_data) |>
+    SCTransform(vst.flavor = "v2", verbose = FALSE) |>
+    # Using assay from SCTransform function
+    FindVariableFeatures(selection.method = "vst", nfeatures = 2000, assay = "SCT")
+  return(sobject)
+}
+
+data_list <- plyr::alply(file.path(stem, all_inputs), 1, read_in_data, .progress = "text")
+
+features <- SelectIntegrationFeatures(object.list = data_list)
+```
+# Analysis 
+
+## Perform integration
+```{R}
+data_anchors <- data_list |>
+  PrepSCTIntegration(assay = "SCT") |>
+  FindIntegrationAnchors(anchor.features = features, normalization.method = "SCT")
+data_combined_pre <- IntegrateData(anchorset = data_anchors)
+```
+
+## Perform PCA
+```{R}
+DefaultAssay(data_combined_pre) <- "integrated"
+data_combined <- ScaleData(data_combined_pre, verbose = FALSE) %>%
+  RunPCA(npcs = 200, verbose = FALSE)
+```
+
+## Export data
+```{R}
+saveRDS(data_combined,
+        file = "~/altcells/singlecellseq/vitalia_scs_aro/processed_data/data_combined.RDS")
+```

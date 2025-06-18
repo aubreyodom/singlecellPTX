@@ -1,0 +1,427 @@
+---
+title: "03_cluster_characterization"
+author: "Aubrey Odom"
+date: "2024-08-28"
+output: html_document
+---
+
+# Setup
+```{R}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(dplyr)
+  library(Seurat)
+  library(SingleR)
+  library(celldex)
+  library(BiocParallel)
+  library(SingleCellExperiment)
+  library(ggradar)
+  library(ggiraphExtra)
+  # /satijalab/seurat-data
+})
+
+fig_folder <- "~/altcells/singlecellseq/vitalia_scs_aro/figures_tm"
+```
+
+# Load data
+```{R}
+data_clustered <- readRDS("~/altcells/singlecellseq/vitalia_scs_aro/processed_data/data_clustered.RDS")
+```
+
+# SingleR for cluster characterization
+
+Note: This script uses the tabula muris dataset
+
+https://bioconductor.org/books/devel/SingleRBook/
+
+## Tabula muris 
+
+- Using droplet for better single-cell resolution
+
+```{R droplet}
+drop_loc <- "/projectnb/altcells/tabula_muris/01_droplet_raw_data/droplet"
+
+# Read in annotation data
+annotations <- read.csv(file.path(drop_loc, "..", "annotations_droplet.csv"))
+
+# What cell types are present in the droplet data
+annotations |>
+  distinct(cell_ontology_class, tissue)
+
+# Read in the lung data
+all_organs <- c("Heart_and_Aorta-10X_P7_4", "Lung-10X_P7_8", 
+                "Lung-10X_P7_9", "Lung-10X_P8_12", "Lung-10X_P8_13")
+
+create_counts <- function(folder_organ) {
+  end_barcode <- stringr::str_split_i(folder_organ, "-", i = -1)
+  these_genes <- read.table(file.path(drop_loc, folder_organ, "genes.tsv"))
+  these_barcodes <- read.table(file.path(drop_loc, folder_organ,
+                                         "barcodes.tsv")) |>
+    mutate(V1 = stringr::str_remove(V1, "-1"),
+           V1 = paste0(end_barcode, "_", V1))
+  these_counts <- Matrix::readMM(file.path(drop_loc, folder_organ, "matrix.mtx")) |>
+    magrittr::set_colnames(these_barcodes[, 1]) |>
+    magrittr::set_rownames(these_genes[, 1])
+  return(these_counts)
+}
+
+organ_counts <- plyr::alply(all_organs, 1, create_counts, .progress = "text")
+
+combined_dfs <- do.call(cbind, args = organ_counts)
+```
+
+### Preparation for classification
+```{R}
+# Ensure match for heart tissue
+heart_annot <- annotations %>%
+  filter(tissue %in% c("Heart_and_Aorta", "Lung"))
+
+# Filter the expression matrix to keep only the cells present in the annotations
+common_cells <- intersect(colnames(combined_dfs), heart_annot$cell)
+
+# Subset the heart_counts matrix based on common cells
+counts_filtered <- combined_dfs[, common_cells]
+annot_heart_filt <- heart_annot %>%
+  filter(cell %in% common_cells)
+
+# Check that the number of cells matches now
+ncol(counts_filtered) == nrow(annot_heart_filt)
+
+heart_sce <- SingleCellExperiment::SingleCellExperiment(
+  assays = list(counts = counts_filtered),
+  colData = annot_heart_filt
+)
+
+logcounts(heart_sce) <- log1p(counts(heart_sce))
+heart_sce$label <- annot_heart_filt$cell_ontology_class
+```
+
+## Run predictions
+```{R}
+norm_counts <- SeuratObject::GetAssayData(data_clustered)
+predictions <- SingleR::SingleR(test = norm_counts,
+                                ref = heart_sce, labels = heart_sce$label,
+                                BPPARAM = MulticoreParam(
+                                  workers = BiocParallel::multicoreWorkers()))
+```
+
+## View predictions
+```{R}
+table(predictions$labels)
+```
+
+----------------------------------------------------------
+
+```{R}
+data_labeled <- data_clustered
+data_clustered[["SingleR.labels"]] <- predictions$labels
+data_clustered[["SingleR.pruned"]] <- predictions$pruned.labels
+
+table(predictions$labels)
+```
+
+## Annotation Diagnostics
+
+### heatmap of SingleR scores
+Ideally, we would see unambiguous assignments where, for any given cell, one label’s score is clearly larger than the others.
+```{R}
+## Choosing which to show
+ind <- sort(table(predictions$labels)) > 1000
+sub_cells <- names(sort(table(predictions$labels))[ind])
+
+png(file.path(fig_folder, "singleR_score_heatmap_1.png"), width = 8, height = 5,
+    units = "in", res = 300)
+
+# Most highly abundant cell types
+which_cell_types <- predictions$labels %in% sub_cells
+plotScoreHeatmap(predictions, cells.use = which_cell_types,
+                 labels.use = sub_cells, show_colnames = FALSE)
+dev.off()
+
+png(file.path(fig_folder, "singleR_score_heatmap_2.png"), width = 8, height = 5,
+    units = "in", res = 300)
+
+# Less abundance (<100 cells in given category)
+sub_cells_low <- names(sort(table(predictions$labels))[!ind])
+which_cell_types_low <- predictions$labels %in% sub_cells_low
+plotScoreHeatmap(predictions, cells.use = which_cell_types_low,
+                 labels.use = sub_cells_low, show_colnames = FALSE)
+
+dev.off()
+
+# All
+png(file.path(fig_folder, "singleR_score_heatmap_3.png"), width = 8, height = 5,
+    units = "in", res = 300)
+
+plotScoreHeatmap(predictions, show_colnames = FALSE)
+dev.off()
+```
+
+### Deltas
+Identify poor-quality or ambiguous assignments based on the per-cell “delta”, i.e., the difference between the score for the assigned label and the median across all labels for each cell. Our assumption is that most of the labels in the reference are not relevant to any given cell.
+```{R}
+plotDeltaDistribution(predictions)
+
+to.remove <- pruneScores(predictions, min.diff.med = 0.01)
+table(Label = predictions$labels, Removed=to.remove)
+
+# Replace pruned labels
+predictions$pruned.labels <- predictions$labels
+predictions$pruned.labels[to.remove] <- NA
+
+plotDeltaDistribution(predictions)
+ggsave(file.path(fig_folder, "singleR_delta_dist.png"), width = 8, height = 5)
+
+predictions$pruned.labels[to.remove] <- "Unclassified"
+data_clustered[["SingleR.pruned"]] <- predictions$pruned.labels
+
+```
+
+- From chapter 4 of the SingleR book
+## Make new cluster types
+```{R}
+cluster_matched_cells <- tibble(cluster = Idents(data_clustered), data_clustered[["SingleR.pruned"]])
+
+summary_main <- cluster_matched_cells |>
+  arrange(cluster) |>
+  group_by(cluster, SingleR.pruned) |>
+  summarise(num_each = n()) |>
+  arrange(cluster, desc(num_each))
+
+summary_main
+```
+
+## Plotting the assignments (FOR CLUSTER ASSIGNMENTS)
+
+### Main labels
+```{R}
+library(randomcoloR)
+set.seed(20)
+n <- 20
+palette <- distinctColorPalette(n)
+names(palette) <- unique(summary_main$SingleR.pruned)
+
+ summary_main |>
+    dplyr::mutate(proportion = num_each / sum(num_each)) |>
+    ggplot2::ggplot(aes(x = cluster, y = num_each, fill = SingleR.pruned)) +
+    geom_bar(stat = "identity") +
+    ggplot2::scale_fill_manual(values = palette) +
+    ggplot2::theme_bw() +
+    labs(main = "Proportion of cell types in each cluster") +
+    ggplot2::xlab("Cluster number") +
+    ggplot2::ylab("Total cluster count") +
+   theme(legend.position = "bottom") +
+   labs(title = "Proportion of cell types by cluster across treatments",
+        subtitle = "Tabula muris dataset - heart and lung")
+
+ggsave(file.path(fig_folder, "barplot_main_labels.png"),
+        width = 9, height = 5, units = "in")
+```
+
+
+# Plotting (for pubs)
+
+## Stacked bar plot with prop of cells by treatment
+```{R}
+## Order the cell types
+order_celltypes <- data_clustered@meta.data |>
+  group_by(SingleR.pruned) |>
+  summarise(count = n()) |>
+  arrange((count)) |>
+  pull(SingleR.pruned)
+
+plotting_data <- data_clustered@meta.data |>
+  mutate("Cell type" = factor(SingleR.pruned, levels = order_celltypes))
+
+set.seed(20)
+n <- 40
+palette <- distinctColorPalette(n)
+names(palette) <- unique(plotting_data$SingleR.pruned)
+
+plotting_data |>
+  filter(!is.na(SingleR.pruned)) |>
+    ggplot2::ggplot(aes(x = Treatment, fill = `Cell type`)) +
+    geom_bar(stat = "count") +
+    ggplot2::scale_fill_manual(values = palette) +
+    ggplot2::theme_bw() +
+    ggplot2::xlab("Treatment") +
+    ggplot2::ylab("Count") +
+  ggplot2::coord_flip() +
+  ggplot2::labs(title = "Proportion of cell type by treatment",
+                subtitle = "Tabula muris dataset") +
+   theme(legend.position = "bottom")
+
+ggsave(file.path(fig_folder, "celltypes_trt_prop.png"), height = 5, width = 8, units = "in")
+```
+# Look at expression indiv genes
+
+```{R}
+# View(tibble(rownames(norm_counts)))
+
+find_gene_conc <- function(gene_of_interest) {
+  scale_genes <- rownames(GetAssayData(data_clustered, "SCT", layer = "scale.data"))
+  if (gene_of_interest %in% scale_genes) {
+    this_slot <- "scale.data"
+    lab <- "Scaled"
+  } else {
+    this_slot <- "data"
+    lab <- "SCT not scaled"
+  }
+  avg_expr <- AverageExpression(data_clustered, features = gene_of_interest, group.by = c("seurat_clusters", "Treatment"),
+                                assays = "SCT", layer = this_slot,
+                                normalization.method = "SCT", scale.factor = 100)$SCT
+  
+  radar_dat <- avg_expr %>%
+    as.matrix() %>%
+    as.data.frame() %>%
+    rownames_to_column() %>%
+    pivot_longer(cols = -1,
+                 names_to = c("names", "Treatment"),
+                 names_sep = "_",
+                 values_to = "value") %>%
+    mutate(names = as.numeric(stringr::str_remove_all(names, "g"))) %>%
+    select(-1) %>%
+    mutate(Treatment = recode(Treatment,
+                              "control" = "Control",
+                              "Dtreatment" = "Dexmethasone",
+                              "PDtreatment" = "Paclitaxel + Dexmethasone",
+                              "Ptreatment" = "Paclitaxel"))
+  
+  p <- ggplot2::ggplot(radar_dat, aes(x = names, y = value, fill = Treatment)) +
+    geom_bar(stat = "identity") +
+    theme_bw() +
+    labs(title = paste("Levels of", gene_of_interest),
+         subtitle = lab) +
+    ggplot2::ylab("Average gene expression value") +
+    xlab("Cluster")
+  print(p)
+  
+  FeaturePlot(data_clustered, features = gene_of_interest,
+              order = TRUE) +
+    labs(title = paste("Expression concentration of", gene_of_interest),
+         subtitle = lab)
+}
+
+find_gene_conc("Fabp4")
+find_gene_conc("Pparg")
+find_gene_conc("Junb")
+find_gene_conc("Pdgfrb")
+  
+    #ggsave(file.path(fig_folder, "Radar", paste0(lab, "Radarchart_", stringr::str_remove(this_trt, " \\+ "), ".png")),
+    #       units = "in", width = 7, height = 5)
+  
+```
+
+# Radar Charts
+
+This plot will contain the top 10 differentially expressed genes between control/paclitaxel, with four facets (one for each treatment)
+
+## DEGs between Paclitaxel and Control
+```{R}
+markers_p_c <- read_csv(file.path("~/altcells/singlecellseq/vitalia_scs_aro/figures/top_DEG_P_control.csv")) |>
+  dplyr::rename("gene" = `...1`)
+
+n_top_genes <- 10
+genes_of_interest <- markers_p_c %>%
+  mutate(fc_strength = abs(logFC)) %>%
+  arrange(desc(fc_strength))
+```
+
+```{R}
+your_genes <- genes_of_interest |>
+  filter(logFC > 0) |>
+  slice_head(n = n_top_genes) |>
+  pull(gene)
+
+build_chart <- function(your_genes, lab) {
+  avg_expr <- AverageExpression(data_clustered, features = your_genes, group.by = c("seurat_clusters", "Treatment"),
+                                assays = "SCT", slot = "scale.data",
+                                normalization.method = "SCT", scale.factor = 100)$SCT
+  
+  radar_dat <- avg_expr %>%
+    as.matrix() %>%
+    as.data.frame() %>%
+    rownames_to_column("Gene") %>%
+    pivot_longer(cols = -1,
+                 names_to = c("Cluster", "Treatment"),
+                 names_sep = "_",
+                 values_to = "value") %>%
+    mutate(Cluster = as.numeric(stringr::str_remove_all(Cluster, "g"))) %>%
+    pivot_wider(names_from = Cluster) %>%
+    mutate(Treatment = recode(Treatment,
+                              "control" = "Control",
+                              "Dtreatment" = "Dexmethasone",
+                              "PDtreatment" = "Paclitaxel + Dexmethasone",
+                              "Ptreatment" = "Paclitaxel"))
+  
+  set.seed(51)
+  palette <- distinctColorPalette(n_top_genes)
+  
+  input_dat <- radar_dat %>%
+    group_by(Treatment) %>%
+    group_split() 
+  
+  mk_radar_plot <- function(data) {
+    this_trt <- unique(data$Treatment)
+    data |>
+      ggRadar(aes(group = "Gene"), alpha = 0.3) + # alpha for polygon colors intensity
+      theme_bw() +
+      ggplot2::scale_fill_manual(values = palette) +
+      ggplot2::scale_color_manual(values = palette) +
+      labs(title = paste("Top", n_top_genes, "enriched genes between Paclitaxel and Control"),
+           subtitle = this_trt, caption = lab) +
+      theme(axis.text = element_text(size = 7))
+    ggsave(file.path(fig_folder, "Radar", paste0(lab, "Radarchart_", stringr::str_remove(this_trt, " \\+ "), ".png")),
+           units = "in", width = 7, height = 5)
+  }
+  
+  lapply(input_dat, mk_radar_plot)
+}
+
+genes_of_interest |>
+  filter(logFC > 0) |>
+  slice_head(n = n_top_genes) |>
+  pull(gene) |>
+  build_chart(lab = "Upregulated")
+
+genes_of_interest |>
+  filter(logFC < 0) |>
+  slice_head(n = n_top_genes) |>
+  pull(gene) |>
+  build_chart(lab = "Downregulated")
+
+genes_of_interest |>
+  slice_head(n = n_top_genes) |>
+  pull(gene) |>
+  build_chart(lab = "Most differentially expressed")
+```
+
+# Cell type UMAP
+
+```{R}
+# For colors
+all_types <- unique(data_clustered@meta.data$SingleR.pruned)
+set.seed(51)
+palette <- distinctColorPalette(length(all_types)) |>
+  setNames(all_types)
+
+DimPlot(data_clustered, reduction = "umap", label = "TRUE",
+        alpha = 0.5, group.by = "SingleR.pruned", cols = palette,
+        label.box = FALSE, repel = TRUE) +
+  ggplot2::labs(x = "UMAP Axis 1", y = "UMAP Axis 2",
+                title = "UMAP of aorta cell types",
+                subtitle = "Across all treatments") +
+  theme_clean()
+
+ggsave(file.path(fig_folder, "UMAP_celltype_only.png"), width = 8, height = 5)
+
+```
+
+
+
+# Export Label data
+```{R}
+dat_save <- "~/altcells/singlecellseq/vitalia_scs_aro/processed_data"
+saveRDS(predictions, file.path(dat_save, "pred_cell_labels_TM.RDS"))
+saveRDS(data_clustered, file.path(dat_save, "data_labelled_TM.RDS"))
+```

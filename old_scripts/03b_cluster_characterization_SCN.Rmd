@@ -1,0 +1,141 @@
+---
+title: "Testing alt cell identification method"
+author: "Aubrey Odom"
+date: "2024-09-13"
+output: html_document
+---
+
+# Setup
+```{R}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(dplyr)
+  library(Seurat)
+  #devtools::install_github("pcahan1/singleCellNet")
+  library(singleCellNet)
+  library(celldex)
+  library(BiocParallel)
+  # /satijalab/seurat-data
+})
+
+fig_folder <- "~/altcells/singlecellseq/vitalia_scs_aro/figures"
+data_folder <- "~/altcells/singlecellseq/vitalia_scs_aro/processed_data"
+```
+
+# Load data
+```{R}
+data_clustered <- readRDS("~/altcells/singlecellseq/vitalia_scs_aro/processed_data/data_clustered.RDS")
+
+# Extract the assay
+counts_dat <- SeuratObject::GetAssayData(data_clustered, assay = "SCT", layer = "counts")
+```
+
+# singleCellNet
+
+Tutorial
+
+https://github.com/CahanLab/singleCellNet
+
+## Setup
+```{R}
+# Load the single cell data
+tm_full <- utils_loadObject("~/altcells/singlecellseq/vitalia_scs_aro/stList_tm10x_full_011521.rda")
+
+expTMraw <- tm_full$expDat
+stTM <- tm_full$sampTab |> droplevels()
+
+# Find genes in common to the data sets and limit analysis to these
+commonGenes <- intersect(rownames(expTMraw), rownames(counts_dat))
+length(commonGenes)
+
+expTMraw_2 <- expTMraw[commonGenes, ]
+
+# Split for training and assessment, and transform training data
+set.seed(90) # can be any random seed number
+stList <- splitCommon(sampTab = stTM, ncells = 100, dLevel = "cell_ontology_class")
+stTrain <- stList[[1]]
+expTrain <- expTMraw_2[, rownames(stTrain)]
+```
+
+## Classification info
+```{R, eval = FALSE}
+class_info <- scn_train(stTrain = stTrain, expTrain = expTrain, nTopGenes = 30, nRand = 70, nTrees = 1000,
+                        nTopGenePairs = , dLevel = "cell_ontology_class", colName_samp = "cell")
+saveRDS(class_info, file.path(data_folder, "SCN_class_info"))
+```
+
+```{R}
+class_info <- readRDS(file.path(data_folder, "SCN_class_info"))
+```
+
+## Split data
+```{R}
+# validate data
+stTestList <- splitCommon(sampTab = stList$val, ncells = 100, dLevel = "cell_ontology_class") # normalize validation data so that the assessment is as fair as possible
+stTest <- stTestList[[1]]
+expTest <- expTMraw[commonGenes, rownames(stTest)]
+```
+
+## predict
+```{R}
+classRes_val_all <- scn_predict(cnProc = class_info[['cnProc']], expDat = expTest, nrand = 50)
+```
+
+## Assess results
+```{R}
+#tm_heldoutassessment <- singleCellNet::assess_comm(ct_scores = classRes_val_all,
+#                                                    stTrain = stTrain,
+#                                                    stQuery = stTest, dLevelSID = "cell",
+#                                                    classTrain = "cell_ontology_class",
+#                                                    classQuery = "cell_ontology_class", nRand = 50)
+#
+#plot_PRs(tm_heldoutassessment)
+```
+
+### Classification Result Heatmap
+
+```{R}
+# Create a name vector label used later in classification heatmap where the values are cell types/ clusters and names are the sample names
+ 
+nrand <- 50
+sla <- as.vector(stTest$cell_ontology_class)
+names(sla) <- as.vector(stTest$cell)
+slaRand <- rep("rand", nrand)
+names(slaRand) <- paste("rand_", 1:nrand, sep = '')
+sla <- append(sla, slaRand) #include in the random cells profile created
+
+png(file.path(fig_folder, "singlecellnet", "heatmap_classification.png"),
+    res = 300, width = 15, height = 15, units = "in")
+sc_hmClass(classMat = classRes_val_all, grps = sla, max = 300, isBig = TRUE)
+dev.off()
+```
+### Attribution plot
+
+```{R}
+png(file.path(fig_folder, "singlecellnet", "attribution_plot.png"),
+    res = 300, width = 15, height = 15, units = "in")
+plot_attr(classRes = classRes_val_all, sampTab = stTest, nrand = nrand,
+          dLevel = "cell_ontology_class", sid = "cell")
+dev.off()
+```
+### Viusalize average top pairs genes expression for training data
+
+```{R}
+gpTab = compareGenePairs(query_exp = expTest, training_exp = expTrain, 
+                         training_st = stTrain, classCol = "cell_ontology_class",
+                         sampleCol = "cell", RF_classifier = class_info$cnProc$classifier,
+                         numPairs = 20, trainingOnly= TRUE)
+
+train = findAvgLabel(gpTab = gpTab, stTrain = stTrain, dLevel = "cell_ontology_class")
+
+png(file.path(fig_folder, "singlecellnet", "gene_expr_pairs.png"),
+    res = 300, width = 15, height = 7, units = "in")
+hm_gpa_sel(gpTab, genes = class_info$cnProc$xpairs, grps = train, maxPerGrp = 50)
+dev.off()
+```
+
+```{R}
+crOUTall <- scn_predict(class_info[['cnProc']], counts_dat, nrand = nqRand)
+
+```
+

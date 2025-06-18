@@ -1,0 +1,218 @@
+---
+title: "Quality Control"
+author: "Aubrey Odom"
+date: "2024-08-26"
+output: html_document
+---
+
+NOTICE
+
+THIS SCRIPT ABANDONED AND NOT USED IN FINAL ANALYSIS
+
+# Setup
+```{R}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(DropletUtils)
+  library(SoupX)
+  library(Matrix)
+})
+
+stem2 <- "~/altcells/singlecellseq/vitalia_scs_aro/processed_data"
+```
+
+# Read in data
+
+```{R}
+# For testing
+# this_group <- "JA_CV_0512_1_PDtreatment"
+
+grab_files <- function(this_group) {
+  stem <- file.path("~/altcells/singlecellseq/Data/Combined_2023-06-06_2023-08-15_ChitaliaV",
+                    this_group,
+                    "outs/raw_feature_bc_matrix")
+  output <- vector(mode = "list")
+  output[["barcodes"]] <- readr::read_delim(file.path(stem, "barcodes.tsv.gz"), delim = "\n",
+                                            col_names = "barcode", show_col_types = FALSE)
+  output[["features"]] <- readr::read_delim(file.path(stem, "features.tsv.gz"), delim = "\t",
+                                            col_names = c("ensembl_id", "gene_name", "count_type"),
+                                            show_col_types = FALSE)
+  output[["matrix"]] <- Matrix::readMM(file.path(stem, "matrix.mtx.gz"))
+  return(output)
+}
+
+folders <- list.files("~/altcells/singlecellseq/Data/Combined_2023-06-06_2023-08-15_ChitaliaV")
+all_gene_exp <- lapply(folders, grab_files)
+names(all_gene_exp) <- stringr::str_split_i(folders, "_", -1)
+```
+
+# Quality control
+
+ORIGINAL READ COUNTS OF CELLS (from web_summary.html)
+
+PTreatment - 20,791
+PDTreatment - 4,243
+DTreatment - 6,011
+control - 4,996
+
+## DropletUtils::emptyDrops
+
+NOTE: This takes a while! Run at your own risk
+
+We will use the emptyDrops function to evaluate whether the cells are "empty" and contain noise rather than helpful information
+```{R}
+# input_list <- all_gene_exp[[1]]
+
+conduct_QC <- function(input_list) {
+  # NOTE: should be genes x droplets (barcodes)
+  this_matrix <- input_list$matrix
+  rownames(this_matrix) <- dplyr::pull(input_list$features, 1)
+  
+  DropletUtils::emptyDrops(
+    this_matrix,
+    lower = 100,
+    retain = NULL,
+    barcode.args = list(),
+    round = TRUE,
+    test.ambient = FALSE
+    #...,
+    #BPPARAM = SerialParam()
+  )
+}
+
+library(plyr)
+emptydrop_info <- plyr::llply(all_gene_exp, conduct_QC, .progress = "text")
+
+saveRDS(emptydrop_info, file.path(stem2, "emptydrop_info"))
+```
+## Interpreting Empty Drops
+
+Total:
+Integer, the total UMI count for each barcode.
+
+LogProb:
+Numeric, the log-probability of observing the barcode's count vector under the null model.
+
+PValue:
+Numeric, the Monte Carlo p-value against the null model.
+
+Limited:
+Logical, indicating whether a lower p-value could be obtained by increasing niters.
+
+emptyDrops will return a DataFrame like testEmptyDrops, with an additional FDR field.
+
+The metadata of the output DataFrame will contains the ambient profile in ambient, the estimated/specified value of alpha, the specified value of lower (possibly altered by use.rank) and the number of iterations in niters. For emptyDrops, the metadata will also contain the retention threshold in retain.
+
+Note: Droplets with significant p-values are considered to contain real cells.
+
+### Which group has the least cells?
+```{R}
+emptydrop_info <- readRDS(file.path(stem2, "emptydrop_info"))
+
+# FDR - adjusted for multiple testing
+count_cells <- function(this_group) {
+  total_num <- emptydrop_info[[this_group]] |>
+    as.data.frame() |>
+    dplyr::filter(FDR <= 0.05, Total >= 200) |>
+    dplyr::summarise(n())
+  message(this_group, ": ", total_num)
+  return(total_num)
+}
+
+smallest <- sapply(names(all_gene_exp), count_cells) |>
+  unlist() |> min()
+
+limiting_number <- smallest |>
+  round(digits = -3)
+```
+
+### Filter/downsample accordingly
+```{R}
+# which_group <- "control"
+
+process_qc <- function(which_group, downsample = FALSE,
+                       limiting_number = NULL) {
+  # Initialize output
+  output <- vector(mode = "list")
+  # Filter empty droplets info
+  to_keep <- emptydrop_info[[which_group]] %>%
+    as_tibble() %>%
+    rownames_to_column("ind") %>%
+    filter(FDR <= 0.05, Total >= 100) %>%
+    mutate(ind = as.numeric(ind)) %>%
+    pull(ind)
+  
+  output[["barcodes"]] <- all_gene_exp[[which_group]]$barcodes[to_keep, ]
+  output[["matrix"]] <- all_gene_exp[[which_group]]$matrix[, to_keep]
+  output[["features"]] <- all_gene_exp[[which_group]]$features
+  
+  # Downsample
+  num_cells <- ncol(output[["matrix"]])
+  set.seed(92)
+  down_vec <- sample(num_cells,
+                     size = limiting_number, replace = FALSE)
+  output[["matrix"]] <- output[["matrix"]][, down_vec]
+  
+  # Ensembl IDs and genes not unique - sum them 
+  all_genes <- output[["features"]]$gene_name
+  ind_dup <- duplicated(all_genes)
+  ind_all_dup <- all_genes %in% all_genes[ind_dup]
+  names_vec <- unique(all_genes[ind_dup])
+  all_inds <- lapply(names_vec, function(x) which(all_genes %in% x)) %>%
+    set_names(names_vec)
+  mk_new_row <- function(gene) {
+    these_inds <- all_inds[gene][[1]]
+    new_row <- output[["matrix"]][these_inds, ] |>
+      colSums() |>
+      matrix(nrow = 1, byrow = TRUE) |>
+      as("dgCMatrix")
+    return(new_row)
+  }
+  message("Combining genes")
+  all_new_rows <- plyr::llply(names_vec, mk_new_row, .progress = "text") |>
+    set_names(names_vec)
+  updated_counts_mat <- output[["matrix"]][-unlist(all_inds), ] |>
+    rbind(do.call(rbind, all_new_rows))
+  # Fix the names
+  new_rownames <- all_genes[-unlist(all_inds)] |> append(names(all_new_rows))
+  #Check
+  check_out <- all.equal(nrow(updated_counts_mat),
+                         nrow(output[["features"]]) - sum(ind_dup))
+  if(!check_out) error("Something went wrong during gene aggregation")
+  rownames(updated_counts_mat) <- new_rownames
+  updated_counts_mat <- updated_counts_mat[rowSums(updated_counts_mat) != 0, ]
+  colnames(updated_counts_mat) <- output[["barcodes"]][down_vec, ] |> unlist()
+  meta_data <- data.frame(Treatment = rep(which_group, ncol(updated_counts_mat)), 
+                          row.names = colnames(updated_counts_mat))
+  
+  #colnames(output[["matrix"]]) <- pull(output[["barcodes"]], 1)[down_vec]
+  seurat_obj <- SeuratObject::CreateSeuratObject(counts = updated_counts_mat,
+                                                 assay = "RNA",
+                                                 project = which_group,
+                                                 meta.data = meta_data)
+  saveRDS(seurat_obj, file = file.path(
+    "~/altcells/singlecellseq/vitalia_scs_aro/processed_data",
+    paste0(which_group, "_filtseurat.RDS")))
+}
+
+plyr::a_ply(names(all_gene_exp), 1, process_qc, limiting_number = limiting_number,
+            .progress = "text")
+```
+
+
+## SoupX
+
+https://rawcdn.githack.com/constantAmateur/SoupX/204b602418df12e9fdb4b68775a8b486c6504fe4/inst/doc/pbmcTutorial.html
+```{R, eval = FALSE}
+# this_group <- "JA_CV_0512_1_PDtreatment"
+# 
+# # Load 10X genomics data
+# stem <- file.path("~/altcells/singlecellseq/Data/Combined_2023-06-06_2023-08-15_ChitaliaV",
+#                     this_group,
+#                     "outs")
+# sc <- load10X(stem)
+# 
+# # Profiling the soup
+# sc_est <- estimateSoup(sc)
+```
+

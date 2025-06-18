@@ -1,0 +1,56 @@
+Gene,Synonyms,Marker Type,Protein Type,Localization,Size (kDa),Reference,Antibodies,ELISA Kits
+BCL2,,"Memory B, Plasma Cell",Binding protein,"Nucleus, Mitochondria",26.3,"2,3,4",BCL2 antibodies,BCL2 ELISA
+BCL6,,Plasma cell,Transcription factor,Nucleus,78.8,"1,3,4",BCL6 antibodies,BCL6 ELISA
+CD19,B4,Pan B cells,Receptor,Cell Membrane,61.1,"1,2,5,6,7",CD19 antibodies,CD19 ELISA
+CD1D,,"MZ, Breg",Receptor,Cell Membrane,37.7,"3,5",CD1D antibodies,CD1D ELISA
+CD22,,"Mature B, Pro B, Naïve",Receptor,Cell Membrane,95.3,"1,2,7",CD22 antibodies,CD22 ELISA
+CD24,,"Pan B cells, Breg",Receptor,Cell Membrane,8.1,"1,5,7",CD24 antibodies,CD24 ELISA
+CD27,,"B1, Memory B, Plasma cell, Plasmablast, Breg",Receptor,Cell Membrane,29.1,"2,3,4,5,6,7",CD27 antibodies,CD27 ELISA
+CD274,"PD-L1, B7-H1",Breg (mouse),Receptor,Cell Membrane,33.3,"5,7",CD274 antibodies,CD274 ELISA
+CD34,,"Pro B cell, Pre B cell",Adhesion molecule,Cell Membrane,40.7,2,CD34 antibodies,CD34 ELISA
+CD38,ADPRC1,"Pro B cell, Pre B cell, Immature B, GC, Plasmablast, Plasma cell, Breg",Receptor,Cell Membrane,34.3,"2,3,5,7",CD38 antibodies,CD38 ELISA
+CD40,"Bp50, TNFRSF5",Pan B cells,Receptor,Cell Membrane,30.6,"1,2,3,6",CD40 antibodies,CD40 ELISA
+CD44,,"Breg (mouse), Plasmablast (mouse)",Receptor,Cell Membrane,81.5,"5,7",CD44 antibodies,CD44 ELISA
+CD5,,"B1, Immature B, Breg",Receptor,Cell Membrane,54.6,"1,2,4,5,7",CD5 antibodies,CD5 ELISA
+CD53,,"Immature B, Naïve, Memory B",Binding protein,Cell Membrane,24.3,2,CD53 antibodies,CD53 ELISA
+CD69,CLEC2C,Other,Receptor,Cell Membrane,22.6,7,CD69 antibodies,CD69 ELISA
+CD72,Lyb-2,Pan B cells,Receptor,Cell Membrane,40.2,1,CD72 antibodies,CD72 ELISA
+CD79A,Ig?,"Ig+ B cells, Pre B cell",Receptor,Cell Membrane,25,"1,2",CD79A antibodies,CD79A ELISA
+CD79B,Ig?,"Ig+ B cells, Pre B cell",Receptor,Cell Membrane,26,"1,2",CD79b antibodies,CD79b ELISA
+CD80,B7-1,"Memory B, Plasmablast, Activated B",Receptor,Cell Membrane,33,"2,4,7",CD80 antibodies,CD80 ELISA
+CD86,B7-2,Activated B,Receptor,Cell Membrane,37.7,7,CD86 antibodies,CD86 ELISA
+CD93,C1qRp,"Transitional, Plasmablast, Plasma cell (mouse)",Receptor,Cell Membrane,68.6,5,CD93 antibodies,CD93 ELISA
+CR2,"CD21, C3DR","Mature B, Naïve, Memory B, MZ",Receptor,Cell Membrane,112.9,"1,3,4,6,7",CD21 antibodies,CD21 ELISA
+CXCR4,,Trafficking,Receptor,Cell Membrane,39.7,"2,3",CXCR4 antibodies,CXCR4 ELISA
+CXCR5,CD185,"Trafficking, P",Receptor,Cell Membrane,42,"2,3,6,7",CXCR5 antibodies,CXCR5 ELISA
+FAS,CD95,"GC, Memory B, Activated B",Receptor,Cell Membrane,273.4,"2,4,5,7",FAS antibodies,FAS ELISA
+FCER2,CD23,"Activated B, Mature B, Naïve",Receptor,Cell Membrane,36.5,"1,6,7",CD23 antibodies,CD23 ELISA
+FCRL4,CD307d,Atypical Memory B,Receptor,Cell Membrane,57.2,"4,7",FCRL4 antibodies,FCRL4 ELISA
+HAVCR1,TIM-1,Breg,Receptor,Cell Membrane,39.3,"3,5,7",HAVCR1 antibodies,HAVCR1 ELISA
+HLA-DR*,,"GC, Plasmablast",Receptor,Cell Membrane,,"2,6,7",HLA-DR antibodies,HLA-DR ELISA
+IgA*,,"Memory B, Plasmablast",Immunoglobulin,"Cell Membrane, Secreted",,"2,3,4,6,7",IgA antibodies,IgA ELISA
+IgD*,,"Naïve, Memory B",Immunoglobulin,"Cell Membrane, Secreted",,"1,2,3,5,6,7",IgD antibodies,IgD ELISA
+IgE*,,Memory B,Immunoglobulin,"Cell Membrane, Secreted",,"4,6",IgE antibodies,IgE ELISA
+IgG*,,Memory B,Immunoglobulin,"Cell Membrane, Secreted",,"3,4,6,7",IgG antibodies,IgG ELISA
+IgM*,,"B1, MZ, Memory B",Immunoglobulin,"Cell Membrane, Secreted",,"1,2,3,4,5,6,7",IgM antibodies,IgM ELISA
+IL10,,Breg,Cytokine,Secreted,20.5,"3,5,7",IL10 antibodies,IL10 ELISA
+IL2RA,CD25,"Breg (human), Activated B",Receptor,Cell Membrane,30.8,"5,7",CD25 antibodies,CD25 ELISA
+IL35*,IL-12? + IL-27?,Breg,Cytokine,Secreted,,"3,5,7",IL-35 antibodies,IL-35 ELISA
+IL7R,CD127,Pro B,Receptor,Cell Membrane,51.6,2,IL7R antibodies,IL7R ELISA
+IRF4,,"Plasmablast, Plasma cell",Transcription factor,Nucleus,51.8,"2,7",IRF4 antibodies,IRF4 ELISA
+ITGAX,CD11c,Other,Receptor,Cell Membrane,127.8,7,CD11c antibodies,CD11c ELISA
+LILRB1,CD85J,Atypical Memory B,Receptor,Cell Membrane,70.8,"6,7",LILRB1 antibodies,LILRB1 ELISA
+MME,CD10,"Pre B cell, Immature B, GC",Protease,Cell Membrane,85.5,"2,5,6,7",MME antibodies,MME ELISA
+MS4A1,CD20,"Mature B, Naïve, GC",Receptor,Cell Membrane,33.1,"1,2,5,6,7",MS4A1 antibodies,MS4A1 ELISA
+NT5E,CD73,Memory B,Hydrolase,Cell Membrane,63.4,"5,6",CD73 antibodies,CD73 ELISA
+PDCD1LG2,"PD-L2, CD273","Memory B, Plasmablast",Receptor,Cell Membrane,31,"4,5",PDL2 antibodies,PDL2 ELISA
+PRDM1,BLIMP1,Plasma Cell,Transcription factor,"Nucleus, Cytoplasm",91.8,"1,2,3,4",BLIMP1 antibodies,BLIMP1 ELISA
+PTPRC,"CD45, B220","Immature B, Naïve, Memory B, Plasma cell, GC",Receptor,Cell Membrane,147.5,"2,4,5",CD45 antibodies,CD45 ELISA
+SDC1,CD138,Plasma cell,Binding protein,Cell Membrane,32.5,"2,4,5,7",SDC1 antibodies,SDC1 ELISA
+SPN,CD43,B1,Receptor,Cell Membrane,40.3,"2,7",SPN antibodies,SPN ELISA
+TFRC,CD71,"Breg (human), Memory B",Receptor,Cell Membrane,84.9,"5,7",TFRC antibodies,TFRC ELISA
+TLR9,,Memory B,Receptor,Cell Membrane,115.9,2,TLR9 antibodies,TLR9 ELISA
+TNFRSF13B,"TACI, CD267","Mature B, Memory B, Plasma cell",Receptor,Cell Membrane,31.8,"1,3,5,6",TACI antibodies,TACI ELISA
+TNFRSF13C,"BAFF-R, CD268, BR3","Transitional, Mature B, GC",Receptor,Cell Membrane,18.9,"1,3,5,6",TNFRSF13C antibodies,TNFRSF13C ELISA
+TNFRSF17,"BCMA, CD269","Mature B, Plasmablast, Plasma cell",Receptor,Cell Membrane,20.2,"1,3,6",TNFRSF17 antibodies,TNFRSF17 ELISA
+XBP1,,"Plasmablast, Plasma cell",Transcription factor,"Cytoplasm, Nucleus",28.7,"2,3,7",XBP1 antibodies,XBP1 ELISA

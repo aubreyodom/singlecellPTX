@@ -1,0 +1,226 @@
+---
+title: "06_GSEA"
+author: "Aubrey Odom"
+date: "2024-10-15"
+output: html_document
+---
+
+# Setup 
+```{R setup}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(TBSignatureProfiler)
+  library(MultiAssayExperiment)
+})
+
+fig_folder <- "~/altcells/singlecellseq/vitalia_scs_aro/figures_tm"
+```
+
+## Read in the data
+```{R}
+data_reclustered <- readRDS("~/altcells/singlecellseq/vitalia_scs_aro/processed_data/data_reclustered.RDS")
+
+```
+
+## Data processing
+
+## Run profiler
+```{R}
+# Read in sig
+
+make_sig_list <- function(sig) {
+  URL_loc <- paste0( "https://www.gsea-msigdb.org/gsea/msigdb/human/download_geneset.jsp?geneSetName=",
+                     sig,
+                     "&fileType=TSV")
+  geneset1 <- read.delim(URL_loc) |>
+  dplyr::filter(STANDARD_NAME == "GENE_SYMBOLS") |>
+  pull(2) |>
+  stringr::str_split(",") |>
+  unlist() |>
+  stringr::str_to_sentence()
+}
+
+sig_names <- c("HP_THORACIC_AORTA_CALCIFICATION",
+  "HP_VASCULAR_CALCIFICATION",
+  "HP_MITRAL_VALVE_CALCIFICATION",
+  "HP_AORTIC_VALVE_CALCIFICATION",
+  "HP_CALCIFICATION_OF_THE_AORTA",
+  "HP_CARDIAC_VALVE_CALCIFICATION",
+  "HP_CARDIOVASCULAR_CALCIFICATION"
+  )
+
+calc_sigs <- sig_names |>
+  plyr::alply(1, make_sig_list) |>
+  set_names(sig_names)
+
+sigs_in <- unique(unlist(calc_sigs))
+new_counts <- data_reclustered@assays$integrated$scale.data
+```
+
+# Subsample
+```{R}
+set.seed(5000)
+which_in <- sigs_in %in% rownames(new_counts)
+
+all_cells <- rownames(new_counts) |>
+  sample(size = 1000, replace = FALSE) |>
+  append(sigs_in[which_in]) |>
+  unique() |>
+  unlist()
+
+new_counts_sub <- new_counts[all_cells, ]
+```
+
+# Create SummarizedExperiment
+```{R}
+SE_rec <- SummarizedExperiment::SummarizedExperiment(
+  assays = S4Vectors::SimpleList(counts = new_counts_sub),
+  colData = data_reclustered@meta.data)
+```
+
+# Run TBSP
+```{R}
+outsig_x2 <- TBSignatureProfiler::runTBsigProfiler(
+  SE_rec,
+  useAssay = "counts",
+  algorithm = c("PLAGE", "ssGSEA"),
+  combineSigAndAlgorithm = TRUE,
+  signatures = calc_sigs,
+  outputFormat = "SummarizedExperiment",
+  parallel.sz = parallel::detectCores()
+)
+
+colData(outsig_x2) <- cbind(colData(outsig_x2),
+                                colData(SE_rec))
+```
+
+# Signature boxplot
+```{R}
+all_sigs <- paste(c("PLAGE", "ssGSEA"), names(calc_sigs), sep = "_")
+
+new_df <- data.frame(Trt = colData(SE_rec)$Treatment)
+rownames(new_df) <- rownames(colData(SE_rec))
+
+# make numeric
+in_dat <- as.data.frame(colData(outsig_x2))[, all_sigs]
+
+signatureBoxplot(inputData = in_dat,
+                 annotationData = new_df,
+                 signatureColNames = all_sigs,
+                 scale = TRUE)
+
+ggsave(file.path(fig_folder, "sigs_boxplot.png"),
+       units = "in", width = 12, height = 7)
+```
+
+# Print AUC tables?
+
+```{R}
+# limit to only control and PTX
+
+output <- vector(mode = "list")
+i <- 1
+for (clust in unique(outsig_x2$clusters)) {
+  ind1 <- outsig_x2$Treatment %in% c("Ptreatment", "control")
+  ind2 <- outsig_x2$clusters %in% clust
+  filt_SE <- outsig_x2[, ind1 & ind2]
+  output[[i]] <- tableAUC(filt_SE,
+           annotationColName = "Treatment",
+           signatureColNames = all_sigs,
+           output = "data.frame",
+           num.boot = 1000) |>
+    mutate(cluster = clust)
+  names(output)[i] <- clust
+  i <- i + 1
+}
+all_aucs <- bind_rows(output) |> arrange(desc(AUC))
+write.csv(all_aucs, file.path(fig_folder, "GSEA_control_P_AUC.csv"))
+```
+
+Would you check the inflammatory cytokines genes in cluster level DEG results? for 8, 15, 16
+
+```{R}
+your_genes <- c("Il6", "Tnf", paste0("Tgfb", c(1, 2, 3)),
+                "Runx2", "Spp1")
+
+  avg_expr <- Seurat::AverageExpression(data_reclustered, features = your_genes, group.by = c("seurat_clusters", "Treatment"),
+                                assays = "integrated", slot = "scale.data", scale.factor = 100, layer = "scale.data")$integrated |>
+    as.data.frame() |>
+    # select(starts_with(c("g8_", "g15_", "g16_"))) |>
+    rownames_to_column('genes') |>
+    pivot_longer(cols = -1,
+                 names_to = c("Cluster", "Treatment"),
+                 names_sep = "_",
+                 values_to = "value") |>
+    mutate(alpha = 0.5)
+  avg_expr$Cluster <- stringr::str_split_i(avg_expr$Cluster,
+                                         "g", i = -1) |>
+    as.numeric()
+  avg_expr$alpha_a <- avg_expr$alpha |>
+    replace(avg_expr$Cluster %in% c(8, 15, 16), 1)
+  
+  ggplot(avg_expr,
+         aes(x = Cluster, y = value, fill = Treatment,
+             alpha = alpha_a)) +
+  geom_bar(stat = "identity", aes(alpha = alpha_a)) +
+  theme_bw() +
+  labs(title = "Inflammation cytokines",
+       x = "Cluster", y = "Average gene expression (scaled") +
+  facet_wrap(~genes) +
+  scale_alpha_continuous(range = c(0.5, 1)) +
+    guides(alpha = "none") 
+
+  ggsave(file.path(fig_folder, "cytokines_barplot.png"),
+       units = "in", width = 12, height = 7)
+```
+
+# Table of which genes are in which calcification signatures
+```{R}
+all_genes <- unique(unlist(calc_sigs))
+all_signames <- names(calc_sigs)
+
+check_genes <- function(this_signame) {
+  # iterate
+  output <- all_genes %in% calc_sigs[[this_signame]] |>
+    as.numeric() |>
+    set_names(all_genes)
+  return(output)
+}
+
+logical_df <- plyr::adply(all_signames, 1, check_genes, .id = NULL) |>
+  t() |> as.data.frame() |>
+  magrittr::set_colnames(all_signames) |>
+  rownames_to_column("Element")
+
+
+# Convert to long format using tidyr's pivot_longer
+long_df <- pivot_longer(logical_df, cols = -Element, names_to = "Vector", values_to = "Present")
+
+# Plot using ggplot
+ggplot(long_df, aes(x = Vector, y = Element, fill = Present)) +
+  geom_tile(color = "black") +
+  scale_fill_gradient(low = "white", high = "blue", guide = "none") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Gene representation among signatures",
+       subtitle = "Human CV calcification signatures",
+       x = "Signature", y = "Gene")
+
+  ggsave(file.path(fig_folder, "calcification_sigs.png"),
+       units = "in", width = 6, height = 6.5)
+
+```
+
+# Evaluating gene sets
+
+```{R}
+
+```
+
+
+
+
+
+
+
+

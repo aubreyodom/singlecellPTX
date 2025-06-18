@@ -1,0 +1,220 @@
+---
+title: "03"
+author: "Aubrey Odom"
+date: "2024-07-11"
+output: html_document
+---
+
+This file continues the data analysis from the cluster characterization step given the processed data.
+
+# Setup
+```{R setup}
+suppressPackageStartupMessages({
+  library(tidyverse) # data manipulation
+  library(Seurat) # SC analysis
+  library(limma) # Diff expression
+  library(edgeR) # Diff expression
+  library(patchwork) # Plotting
+  library(ggplot2) # Plotting
+  library(gridExtra) # Plotting
+  library(randomcoloR) # Plotting
+  library(ggiraphExtra)
+  # devtools::install_github("ricardo-bion/ggradar")
+  library(ggradar)
+  library(reshape2)
+})
+
+fig_folder <- "~/altcells/singlecellseq/vitalia_scs_aro/figures_tm"
+```
+
+```{R}
+data_labelled <- readRDS("/projectnb/altcells/singlecellseq/vitalia_scs_aro/processed_data/data_labelled_TM.RDS")
+```
+
+# Finding differentially expressed genes (cluster biomarkers)
+
+## Obtain the differentially expressed genes
+This step should not be rerun to save computational power
+```{R}
+# find markers for every cluster compared to all remaining cells, report only the positive ones
+#all_markers <- FindAllMarkers(data_labelled, only.pos = FALSE)
+#saveRDS(all_markers,
+#file = "~/altcells/singlecellseq/vitalia_scs_aro/processed_data/all_markers_TM.RDS")
+```
+
+```{R}
+all_markers <- readRDS("~/altcells/singlecellseq/vitalia_scs_aro/processed_data/all_markers_TM.RDS")
+
+```
+
+## Examine the markers
+```{R}
+preview_table <- all_markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+  arrange(desc(avg_log2FC))
+
+table(preview_table$cluster)
+preview_table
+```
+## Top 10 markers by cluster
+High = yellow, low = purple
+```{R}
+top10_down <- all_markers %>%
+  group_by(cluster) %>%
+  arrange(avg_log2FC) %>%
+  #dplyr::filter(avg_log2FC > 1) %>%
+  slice_head(n = 10) %>%
+  ungroup()
+
+top10_up <- all_markers %>%
+  group_by(cluster) %>%
+  arrange(desc(avg_log2FC)) %>%
+  #dplyr::filter(avg_log2FC > 1) %>%
+  slice_head(n = 10) %>%
+  ungroup()
+
+# Down
+png(file.path(fig_folder, "heatmap_down.png"), units = "in", res = 300, width = 5, height = 6)
+Seurat::DoHeatmap(subset(data_labelled, downsample = 1000), features = top10_down$gene)
+dev.off()
+
+# Up
+png(file.path(fig_folder, "heatmap_up.png"), units = "in", res = 300, width = 5, height = 6)
+Seurat::DoHeatmap(subset(data_labelled, downsample = 1000), features = top10_up$gene)
+dev.off()
+```
+
+# Investigating additional cell types
+
+## Function
+```{R}
+create_vlnplot <- function(gene_in, cell_type) {
+  p <- VlnPlot(data_labelled, features = gene_in, alpha = 0.5) +
+  labs(title = "Violin plot",
+       subtitle = gene_in, caption = cell_type) +
+  xlab("Cluster Number") +
+  theme_bw() +
+  theme(legend.position = "none")
+  return(p)
+}
+
+create_plotgrid <- function(list_genes, cell_type) {
+  plots <- lapply(list_genes, create_vlnplot, cell_type = cell_type) |>
+  marrangeGrob(ncol = 2, nrow = ceiling(length(list_genes)/2))
+  ggsave(plot = plots, file.path(fig_folder, paste0("violinplot", cell_type, ".png")),
+       width = 10,
+       height = 10)
+  return(plots)
+}
+
+```
+
+## Create violin plots
+```{R}
+all_genes <- tibble(genes = rownames(data_labelled))
+
+# adipocytes
+create_plotgrid(c("Fabp4", "Adipoq", "Plin1", "Pparg"), "adipocytes")
+
+# Platelets
+create_plotgrid(c("Itga2b", "Itgb3", "Pecam1", "Gp1ba", "Tbxa2r"), "platelets")
+
+## Pericytes
+create_plotgrid(c("Angpt2", "Notch3", "Acta2", "Rgs5", "Pdgfrb"), "pericytes")
+
+## Vascular progenitor cells
+create_plotgrid(c("Cd34", "Kdr", "Cxcr4", "Prom1", "Pdgfrb"), "vascular_progenitor_cells")
+
+```
+
+### kalluri
+```{R}
+library(SingleR)
+library(SingleCellExperiment)
+library(BiocParallel)
+
+file_loc <- "~/altcells/singlecellseq/Kalluri_sc_mouseaortaatlas"
+
+metadata <- read_table(file.path(file_loc, "META_DATA_Chow_12PCs_outfile.txt"),
+           skip = 1) |>
+  magrittr::set_colnames(c("NAME", "Cluster", "Sub-Cluster", "Average Intensity"))
+
+# Principal components
+# data.table::fread(file.path(file_loc, "Cluster_File_Chow_12PCs_outfile.gz"), skip = 1)
+
+all_counts <- read.table(file.path(file_loc, "Seurat_Chow_12PCs_outfile.mtx"), skip = 1, row.names = 1)#, features = "genes.tsv", cells = "barcodes.tsv")
+colnames_counts <- read.table(file.path(file_loc, "Seurat_Chow_12PCs_outfile.mtx"), nrows = 1)
+colnames(all_counts) <- unlist(colnames_counts)[-1]
+
+# Create single cell experiment
+new_sce <- SingleCellExperiment::SingleCellExperiment(
+  assays = list(counts = all_counts),
+  colData = metadata
+)
+
+SingleCellExperiment::logcounts(new_sce) <- log1p(counts(new_sce))
+new_sce$label <- new_sce$`Sub-Cluster`
+
+norm_counts <- SeuratObject::GetAssayData(data_labelled)
+predictions <- SingleR::SingleR(test = norm_counts,
+                                ref = new_sce, labels = new_sce$label,
+                                BPPARAM = MulticoreParam(
+                                  workers = BiocParallel::multicoreWorkers()))
+
+head(predictions$labels)
+
+```
+
+## Mesothelial cells
+```{R}
+# We will look at endothelial cell markers
+# Split by cell type
+data_labelled$fctr_celltype <- as.factor(data_labelled$SingleR.pruned)
+  VlnPlot(data_labelled, features = "Kdr", alpha = 0.5,
+               split.by = "fctr_celltype",
+               idents = c(1, 2,3,10)) +
+  labs(title = "Violin plot",
+       subtitle = "Kdr", caption = "By cell type") +
+  xlab("Cluster Number") +
+  theme_bw()
+```
+
+## Cell differentiation
+
+Note, I removed some cells from the atlas; so these aren't correct.
+
+```{R}
+data_reclustered <- data_labelled
+data_reclustered$clusters <- Idents(data_reclustered) |>
+  paste() |> as.numeric()
+data_reclustered$celltype <- Idents(data_reclustered) %>%
+  factor(levels = seq_along(unique(Idents(data_reclustered))) - 1, labels =
+           c("C0" = "VSMCs",
+             "C1" = "Leukocytes / Cardiac Muscle",
+             "C2" = "Mixed",
+             "C3" = "Mixed",
+             "C4" = "Erythrocyte",
+             "C5" = "VSMCs",
+             "C6" = "Fibroblasts",
+             "C7" = "Endothelial Cells",
+             "C8" = "Leukocytes",
+             "C9" = "B Cells",
+             "C10" = "Endothelial cells / Leukocytes",
+             "C11" = "Mixed",
+             "C12" = "Fibroblasts",
+             "C13" = "Endothelial cells", 
+             "C14" = "T cells",
+             "C15" = "Leukocytes",
+             "C16" = "Leukocytes",
+             "C17" = "Endothelial cells"))
+data_reclustered$integrated_snn_res.0.4 <- data_reclustered$clusters
+data_reclustered$seurat_clusters <- data_reclustered$clusters
+```
+
+# Export reclustered data
+```{R}
+dat_save <- "~/altcells/singlecellseq/vitalia_scs_aro/processed_data"
+saveRDS(data_reclustered, file.path(dat_save, "data_reclustered.RDS"))
+```
+
