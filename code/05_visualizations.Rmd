@@ -16,6 +16,9 @@ suppressPackageStartupMessages({
   library(BiocParallel)
   library(SingleCellExperiment)
   library(randomcoloR)
+  library(limma)
+  library(ggiraphExtra)
+  library(randomcoloR)
   # /satijalab/seurat-data
 })
 
@@ -26,6 +29,26 @@ fig_folder <- "~/altcells/singlecellseq/vitalia_scs_aro/figures_tm"
 ```{R}
 data_reclustered <- readRDS("~/altcells/singlecellseq/vitalia_scs_aro/processed_data/data_reclustered.RDS")
 
+```
+
+```{R}
+b_cell_markers <- read.csv("~/altcells/singlecellseq/vitalia_scs_aro/markers.csv")
+
+all_markers <- all_rec_markers %>%
+  filter(cluster == 10) %>%
+  mutate(big_change = abs(avg_log2FC)) %>%
+  arrange(desc(big_change)) %>%
+  mutate()
+  #slice_head(n = 20) %>%
+  #View()
+
+comb <- c(b_cell_markers$Synonyms, b_cell_markers$Synonyms)
+
+
+matches <- sapply(comb[comb != ""], function(input) agrep(
+  pattern = input, x = all_markers$gene,
+                                  max.distance = 0.05,
+                                  value = TRUE))
 ```
 
 # Average read count among cells
@@ -142,7 +165,7 @@ create_vlnplot <- function(gene_in) {
 }
 
 plots <- lapply(var_table_rec$gene[1:10], create_vlnplot) |>
-  marrangeGrob(nrow = 4, ncol = 3)
+  gridExtra::marrangeGrob(nrow = 4, ncol = 3)
 
 plots
 
@@ -158,21 +181,6 @@ FeaturePlot(data_reclustered, features = var_table_rec$gene[1:10],
             order = TRUE)
 
 ggsave(file.path(fig_folder, "FeaturePlot.png"),
-       width = 15,
-       height = 10)
-```
-
-```{R}
-preview_table_2 <- all_markers %>%
-    group_by(cluster) %>%
-    dplyr::filter(avg_log2FC > 1,
-                  cluster == 2) %>%
-  arrange(desc(pct.1))
-
-FeaturePlot(data_reclustered,
-            features = preview_table_2$gene[1:10])
-
-ggsave(file.path(fig_folder, "FeaturePlot_2.png"),
        width = 15,
        height = 10)
 ```
@@ -442,44 +450,6 @@ for (clust in unique(plotting_data$clusters)) {
 ```
 
 
-## Redo barplot from 03
-
-```{R}
-library(randomcoloR)
-set.seed(20)
-names_these <- unique(data_reclustered$SingleR.pruned)
-n <- length(names_these)
-palette <- distinctColorPalette(n)
-names(palette) <- names_these
-
-cluster_matched_cells <- tibble(cluster = Idents(data_reclustered), data_reclustered[["SingleR.pruned"]])
-
-summary_main <- cluster_matched_cells |>
-  arrange(cluster) |>
-  group_by(cluster, SingleR.pruned) |>
-  summarise(num_each = n()) |>
-  arrange(cluster, desc(num_each))
-
-
- summary_main |>
-    dplyr::mutate(proportion = num_each / sum(num_each)) |>
-    ggplot2::ggplot(aes(x = cluster, y = num_each, fill = SingleR.pruned)) +
-    geom_bar(stat = "identity") +
-    ggplot2::scale_fill_manual(values = palette) +
-    ggplot2::theme_bw() +
-    labs(main = "Proportion of cell types in each cluster") +
-    ggplot2::xlab("Cluster number") +
-    ggplot2::ylab("Total cluster count") +
-   theme(legend.position = "bottom") +
-   labs(title = "Proportion of cell types by cluster across treatments",
-        subtitle = "Tabula muris dataset - heart and lung")
-
-ggsave(file.path(fig_folder, "barplot_main_labels_RECLUSTERED.png"),
-        width = 9, height = 5, units = "in")
-
-```
-
-
 # Radar Charts
 
 This plot will contain the top 10 differentially expressed genes between control/paclitaxel, with four facets (one for each treatment)
@@ -735,26 +705,6 @@ ggsave(file.path(fig_folder, "RAF1.png"), width = 8, height = 5)
 
 # Isolate the top biomarkers
 
-```{R}
-b_cell_markers <- read.csv("~/altcells/singlecellseq/vitalia_scs_aro/markers.csv")
-
-all_markers <- all_rec_markers %>%
-  filter(cluster == 10) %>%
-  mutate(big_change = abs(avg_log2FC)) %>%
-  arrange(desc(big_change)) %>%
-  mutate()
-  #slice_head(n = 20) %>%
-  #View()
-
-comb <- c(b_cell_markers$Synonyms, b_cell_markers$Synonyms)
-
-
-matches <- sapply(comb[comb != ""], function(input) agrep(
-  pattern = input, x = all_markers$gene,
-                                  max.distance = 0.05,
-                                  value = TRUE))
-```
-
 ## looking at the celldex set
 ```{R}
 mouse_ref <- celldex::MouseRNAseqData()
@@ -813,6 +763,17 @@ ggsave(file.path(fig_folder, "dotplot_bcells.png"), saved_plot, width = 12, unit
 
 # FIGURE 1
 
+## Standardize colors
+
+```{R}
+set.seed(22)
+
+# Get all unique cell types from the dataset
+all_celltypes <- unique(data_reclustered$SingleR.pruned)
+palette <- distinctColorPalette(length(all_celltypes))
+names(palette) <- all_celltypes
+```
+
 ## Stacked bar plot with prop of cells by treatment
 ```{R}
 ## Order the cell types
@@ -825,11 +786,6 @@ order_celltypes <- data_reclustered@meta.data |>
 plotting_data <- data_reclustered@meta.data |>
   mutate("Cell type" = factor(SingleR.pruned, levels = order_celltypes))
 
-set.seed(20)
-n <- 40
-palette <- distinctColorPalette(n)
-names(palette) <- unique(plotting_data$SingleR.pruned)
-
 plotting_data |>
   filter(!is.na(SingleR.pruned)) |>
   ggplot2::ggplot(aes(x = Treatment, fill = `Cell type`)) +
@@ -837,10 +793,9 @@ plotting_data |>
     ggplot2::scale_fill_manual(values = palette) +
     ggplot2::theme_bw() +
     ggplot2::xlab("Treatment") +
-    ggplot2::ylab("Count") +
+    ggplot2::ylab("Cell count") +
   ggplot2::coord_flip() +
-  ggplot2::labs(title = "Proportion of cell type by treatment",
-                subtitle = "Tabula muris dataset") +
+  ggplot2::labs(title = "Differential cell type composition across treatments") +
    theme(legend.position = "bottom") +
   guides(color = guide_legend(nrow = 4)) 
 
@@ -848,34 +803,70 @@ ggsave(file.path(fig_folder, "celltypes_trt_prop_FIG1.png"), height = 4, width =
 ```
 
 
-### UMAP of cluster names (FIGURE 1)
+## UMAP with cluster names
 ```{R}
-set.seed(14)
-to_color <- unique(data_reclustered$fctr_celltype)
-palette <- distinctColorPalette(length(to_color)) |>
-  setNames(to_color)
-
 # UMAP
 input_umap_dat <- Embeddings(data_reclustered, reduction = "umap") |>
   as.data.frame() |>
   rownames_to_column() |>
   left_join(rownames_to_column(data_reclustered@meta.data),
-            by = "rowname")
+            by = "rowname") |>
+  dplyr::rename("Cluster type" = "celltype",
+                "Cluster id" = "clusters")
 
+# Compute centroids
+centroids <- input_umap_dat |>
+  group_by(`Cluster id`, `Cluster type`) |>
+  summarise(umap_1 = mean(umap_1), umap_2 = mean(umap_2))
+
+# UMAP plot with centroid labels
 in_umap_shuff <- input_umap_dat[sample(nrow(input_umap_dat)), ]
   
 in_umap_shuff |>
-  ggplot2::ggplot(aes(x = umap_1, y = umap_2, colour = fctr_celltype)) +
-  ggplot2::geom_point(alpha = 0.4, size = 0.4) +
-  ggplot2::labs(x = "UMAP Axis 1", y = "UMAP Axis 2",
-                title = "UMAP Plot",
-                subtitle = "Across treatments") +
+  mutate("Cell type" = factor(fctr_celltype, levels = order_celltypes)) |>
+  ggplot2::ggplot(aes(x = umap_1, y = umap_2,
+                      colour = `Cell type`)) +
+  geom_point(alpha = 0.4, size = 0.4) +
+  geom_text(data = centroids, aes(x = umap_1, y = umap_2, label = `Cluster type`),
+            color = "black", size = 3, fontface = "bold", inherit.aes = FALSE) +
+  labs(x = "UMAP Axis 1", y = "UMAP Axis 2",
+       title = "UMAP Plot",
+       subtitle = "All treatments") +
   scale_color_manual(values = palette) +
   theme_classic() +
   guides(color = guide_legend(override.aes = list(alpha = 1, size = 5)))
-  #facet_wrap(~Treatment, ncol = 4)
-
-# ggsave(file.path(fig_folder, "UMAP_by_trt.png"), width = 6, height = 4)
 
 ggsave(file.path(fig_folder, "UMAP_across_trt_FIG1.png"), width = 8, height = 5)
+```
+
+
+## Redo barplot from 03
+
+```{R}
+cluster_matched_cells <- tibble(cluster = Idents(data_reclustered), data_reclustered[["SingleR.pruned"]])
+
+summary_main <- cluster_matched_cells |>
+  arrange(cluster) |>
+  group_by(cluster, SingleR.pruned) |>
+  summarise(num_each = n()) |>
+  arrange(cluster, desc(num_each))
+
+
+ summary_main |>
+    dplyr::mutate(proportion = num_each / sum(num_each),
+                  "Cell type" = factor(SingleR.pruned, levels = order_celltypes)) |>
+    ggplot2::ggplot(aes(x = cluster, y = num_each, fill = `Cell type`)) +
+    geom_bar(stat = "identity") +
+    ggplot2::scale_fill_manual(values = palette) +
+    ggplot2::theme_bw() +
+    labs(main = "Cell Type Composition Across Clusters") +
+    ggplot2::xlab("Cluster") +
+    ggplot2::ylab("Total cell count") +
+   theme(legend.position = "bottom") +
+   labs(title = "Proportion of cell types by cluster",
+        subtitle = "All treatments")
+
+ggsave(file.path(fig_folder, "barplot_main_labels_FIG1.png"),
+        width = 9, height = 5, units = "in")
+
 ```
