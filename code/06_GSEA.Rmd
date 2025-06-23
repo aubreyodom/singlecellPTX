@@ -96,7 +96,11 @@ colData(outsig_x2) <- cbind(colData(outsig_x2),
 
 # Signature boxplot
 ```{R}
-all_sigs <- paste(c("PLAGE", "ssGSEA"), names(calc_sigs), sep = "_")
+all_sigs <- paste(c("PLAGE"), names(calc_sigs),
+                  sep = "_") |>
+  append(paste(c("ssGSEA"), names(calc_sigs),
+                  sep = "_"))
+  
 
 new_df <- data.frame(Trt = colData(SE_rec)$Treatment)
 rownames(new_df) <- rownames(colData(SE_rec))
@@ -113,7 +117,64 @@ ggsave(file.path(fig_folder, "sigs_boxplot.png"),
        units = "in", width = 12, height = 7)
 ```
 
-# Print AUC tables?
+
+# Compare boxplots
+
+## new
+```{R}
+# Define all treatment combinations
+treatments <- c("PDtreatment", "Ptreatment", "Dtreatment", "control")
+combinations <- combn(treatments, 2, simplify = FALSE)
+
+# Loop through each pairwise combination
+for (combo in combinations) {
+  treatment1 <- combo[1]
+  treatment2 <- combo[2]
+  
+  # Filter samples for the current treatment combination
+  filtered_samples <- colData(outsig_x2) %>%
+    as.data.frame() %>%
+    filter(Treatment %in% c(treatment1, treatment2)) %>%
+    rownames()
+  
+  # Subset the SummarizedExperiment
+  se_filtered <- outsig_x2[, filtered_samples]
+  
+  # Generate the boxplot
+  compareBoxplots(
+    SE_scored = se_filtered,
+    annotationColName = "Treatment",
+    signatureColNames = all_sigs,
+    pb.show = FALSE,
+    rotateLabels = TRUE
+  )
+  
+  # Save the plot with a unique filename
+  filename <- paste0("gsea_compare_boxplots_", treatment1, "_vs_", treatment2, ".png")
+  ggsave(file.path(fig_folder, filename), units = "in", width = 6, height = 9)
+}
+```
+
+## old
+```{R}
+# Limit treatment to PTX vs. Control
+filtered_samples <- colData(outsig_x2) %>%
+  as.data.frame() %>%
+  filter(Treatment %in% c("Ptreatment", "PDtreatment")) %>%
+  rownames()
+
+se_filtered <- outsig_x2[, filtered_samples]
+
+compareBoxplots(SE_scored = se_filtered,
+                annotationColName = "Treatment",
+                signatureColNames = all_sigs,
+                pb.show = FALSE, rotateLabels = TRUE)
+
+ggsave(file.path(fig_folder, "gsea_compare_boxplots.png"),
+       units = "in", width = 6, height = 9)
+```
+
+# Print AUC tables
 
 ```{R}
 # limit to only control and PTX

@@ -827,18 +827,20 @@ in_umap_shuff |>
   ggplot2::ggplot(aes(x = umap_1, y = umap_2,
                       colour = `Cell type`)) +
   geom_point(alpha = 0.4, size = 0.4) +
-  geom_text(data = centroids, aes(x = umap_1, y = umap_2, label = `Cluster type`),
-            color = "black", size = 3, fontface = "bold", inherit.aes = FALSE) +
+  geom_text_repel(data = centroids,
+                  aes(x = umap_1 + 0.5, y = umap_2 + 0.5, label = `Cluster id`),
+                  size = 3, fontface = "bold", color = "black",
+                  box.padding = 0.3, point.padding = 0.2,
+                  segment.color = NA, inherit.aes = FALSE) +
   labs(x = "UMAP Axis 1", y = "UMAP Axis 2",
-       title = "UMAP Plot",
-       subtitle = "All treatments") +
+       title = "UMAP visualization of cell type diversity across treatments") +
   scale_color_manual(values = palette) +
   theme_classic() +
   guides(color = guide_legend(override.aes = list(alpha = 1, size = 5)))
 
-ggsave(file.path(fig_folder, "UMAP_across_trt_FIG1.png"), width = 8, height = 5)
+ggsave(file.path(fig_folder, "UMAP_across_trt_FIG1.png"),
+       width = 6, height = 4.5)
 ```
-
 
 ## Redo barplot from 03
 
