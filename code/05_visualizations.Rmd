@@ -19,6 +19,7 @@ suppressPackageStartupMessages({
   library(limma)
   library(ggiraphExtra)
   library(randomcoloR)
+  library(ggrepel)
   # /satijalab/seurat-data
 })
 
@@ -29,26 +30,6 @@ fig_folder <- "~/altcells/singlecellseq/vitalia_scs_aro/figures_tm"
 ```{R}
 data_reclustered <- readRDS("~/altcells/singlecellseq/vitalia_scs_aro/processed_data/data_reclustered.RDS")
 
-```
-
-```{R}
-b_cell_markers <- read.csv("~/altcells/singlecellseq/vitalia_scs_aro/markers.csv")
-
-all_markers <- all_rec_markers %>%
-  filter(cluster == 10) %>%
-  mutate(big_change = abs(avg_log2FC)) %>%
-  arrange(desc(big_change)) %>%
-  mutate()
-  #slice_head(n = 20) %>%
-  #View()
-
-comb <- c(b_cell_markers$Synonyms, b_cell_markers$Synonyms)
-
-
-matches <- sapply(comb[comb != ""], function(input) agrep(
-  pattern = input, x = all_markers$gene,
-                                  max.distance = 0.05,
-                                  value = TRUE))
 ```
 
 # Average read count among cells
@@ -77,6 +58,16 @@ summary(anova_result)
 ```{R}
 table(data_reclustered$SingleR.pruned) |>
   sort()
+
+```
+
+## Obtain cell type distributions
+```{R}
+data_reclustered@meta.data %>%
+  dplyr::count(SingleR.pruned) %>%
+  mutate(percentage = 100 * n / sum(n),
+         percentage = round(percentage, 2)) |>
+  arrange(desc(percentage))
 
 ```
 
@@ -149,6 +140,26 @@ var_table_rec <- all_rec_markers %>%
 
 table(var_table_rec$cluster)
 var_table_rec
+```
+
+```{R}
+b_cell_markers <- read.csv("~/altcells/singlecellseq/vitalia_scs_aro/markers.csv")
+
+all_markers <- all_rec_markers %>%
+  filter(cluster == 10) %>%
+  mutate(big_change = abs(avg_log2FC)) %>%
+  arrange(desc(big_change)) %>%
+  mutate()
+  #slice_head(n = 20) %>%
+  #View()
+
+comb <- c(b_cell_markers$Synonyms, b_cell_markers$Synonyms)
+
+
+matches <- sapply(comb[comb != ""], function(input) agrep(
+  pattern = input, x = all_markers$gene,
+                                  max.distance = 0.05,
+                                  value = TRUE))
 ```
 
 
@@ -872,3 +883,99 @@ ggsave(file.path(fig_folder, "barplot_main_labels_FIG1.png"),
         width = 9, height = 5, units = "in")
 
 ```
+
+# Additional Figures (presentation)
+
+## Single gene boxplots
+
+
+### PTX vs. Control
+```{R}
+genes <- c("NOTCH1", "ICAM1", "TNF", "MGP", "HSPA12A", "TRP53", "DCN") |> str_to_sentence()
+directions <- c("Downregulated", "Downregulated", "Downregulated",
+                "Upregulated", "Downregulated", "Downregulated", "Downregulated")
+which_trts <- c("control", "Ptreatment")
+
+avg_mat <- AverageExpression(
+  data_reclustered,
+  features = genes,
+  group.by = c("Treatment"),
+  assays = "integrated",
+  slot = "scale.data",
+  normalization.method = "integrated",
+  scale.factor = 100,
+  layer = "scale.data"
+)$integrated |>
+  as.data.frame() |>
+  select(all_of(which_trts))
+
+df_expr <- avg_mat |>
+  rownames_to_column("gene") |>
+  pivot_longer(-gene, names_to = "group", values_to = "mean_expression") |>
+  mutate(direction = directions[match(gene, genes)])
+
+# Plot
+ggplot(df_expr, aes(x = gene, y = mean_expression, fill = direction)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_wrap(~ group) +
+  labs(title = "Gene Expression by Treatment Group",
+       y = "Average Scaled Expression",
+       x = "Gene",
+       fill = "DE Direction") +
+  scale_fill_manual(values = c("Upregulated" = "firebrick", "Downregulated" = "steelblue")) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+
+
+ggsave(file.path(fig_folder, "deg_barplot_ptx_control_calcific.png"),
+       units = "in", width = 8, height = 3)
+```
+
+### PTX + DEX
+
+```{R}
+
+genes <- c("HSPA1A", "IL1B", "TNF", "MGP", "Notch1",
+           "DCN") |> str_to_sentence()
+directions <- c("Downregulated", "Upregulated", "Upregulated",
+                "Downregulated", "Upregulated",
+                "Downregulated")
+which_trts <- c("control", "PDtreatment")
+
+avg_mat <- AverageExpression(
+  data_reclustered,
+  features = genes,
+  group.by = c("Treatment"),
+  assays = "integrated",
+  slot = "scale.data",
+  normalization.method = "integrated",
+  scale.factor = 100,
+  layer = "scale.data"
+)$integrated |>
+  as.data.frame() |>
+  select(all_of(which_trts))
+
+df_expr <- avg_mat |>
+  rownames_to_column("gene") |>
+  pivot_longer(-gene, names_to = "group", values_to = "mean_expression") |>
+  mutate(direction = directions[match(gene, genes)])
+
+# Plot
+ggplot(df_expr, aes(x = gene, y = mean_expression, fill = direction)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_wrap(~ group) +
+  labs(title = "Gene Expression by Treatment Group",
+       y = "Average Scaled Expression",
+       x = "Gene",
+       fill = "DE Direction") +
+  scale_fill_manual(values = c("Upregulated" = "firebrick", "Downregulated" = "steelblue")) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+
+
+ggsave(file.path(fig_folder, "deg_barplot_ptxdex_control_calcific.png"),
+       units = "in", width = 8, height = 3)
+
+```
+
+

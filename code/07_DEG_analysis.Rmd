@@ -228,3 +228,43 @@ ggsave(file.path(save_folder, paste0("DEG_heatmap_genes_for_validation.png")),
 
   
 ```
+
+# Report DEG values
+
+## All cells (NO clusters)
+```{R}
+for (this_deg_tab in list(NC_p_c_deg, NC_pd_c_deg)) {
+  this_deg_tab |>
+  mutate(p_val_adj = formatC(p_val_adj, format = "e", digits = 2),
+         `Avg log2 FC` = round(avg_log2FC, digits = 1)) |>
+  relocate(X, `Avg log2 FC`, p_val_adj) |>
+  select(-avg_log2FC, -p_val) |>
+  filter(X %in% c("Notch1", "Mgp", "Icam1", "Vcam1",
+                  "Hspa1a", "Hspa1b", "Hspa12a",
+                  "Acta2", "Tgfb1", "Mmp9",
+                  #Inflammatory
+                  "Il1b", "Tnf",
+                  "Itgb1", "Col3a1", "Col8a2",
+                  "Trp53")) |>
+  arrange(X) |>
+    print()
+}
+
+
+```
+
+
+## VSMC cells (clusters in PTX vs Control)
+```{R}
+p_c_deg |>
+  filter(p_val_adj < 0.05) |>
+  mutate(p_val_adj = formatC(p_val_adj, format = "e", digits = 2),
+         `Avg log2 FC` = round(avg_log2FC, digits = 1)) |>
+  relocate(gene, `Avg log2 FC`, p_val_adj) |>
+  select(-avg_log2FC, -X, -p_val) |> 
+  filter(cluster %in% c(0, 5)) |>
+  filter(gene %in% c("Acta2", "Tagln",
+                     "Mgp", "Runx2", "Col1a2")) |>
+  arrange(gene)
+
+```

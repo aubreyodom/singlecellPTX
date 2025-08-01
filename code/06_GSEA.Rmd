@@ -57,13 +57,15 @@ sigs_in <- unique(unlist(calc_sigs))
 new_counts <- data_reclustered@assays$integrated$scale.data
 ```
 
-# Subsample
+# Subsample to include only 5000 genes in addition to those in any signatures of interest
+
+This allows for efficient processing with minimal effect on results
 ```{R}
 set.seed(5000)
 which_in <- sigs_in %in% rownames(new_counts)
 
 all_cells <- rownames(new_counts) |>
-  sample(size = 1000, replace = FALSE) |>
+  sample(size = 5000, replace = FALSE) |>
   append(sigs_in[which_in]) |>
   unique() |>
   unlist()
@@ -272,16 +274,16 @@ ggplot(long_df, aes(x = Vector, y = Element, fill = Present)) +
 
 ```
 
-# Evaluating gene sets
+# Evaluating gene sets for publication
 
 ```{R}
+# Convert to -10x
 
+aucs_subset <- all_aucs |> 
+  filter(AUC > 0.6) |>
+  mutate(pval_sci = 10^(-neg10xLog.P.value.) |>
+           formatC(format = "e", digits = 2)) |>
+  dplyr::select(Signature, pval_sci, AUC, cluster)
+
+write.csv(aucs_subset, file.path(fig_folder, "subset_GSEA_control_P_AUC.csv"))
 ```
-
-
-
-
-
-
-
-

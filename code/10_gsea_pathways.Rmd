@@ -1,0 +1,102 @@
+---
+title: "10. GSEA Pathways"
+author: "Yichi Zhang, Aubrey Odom"
+date: "2024-10-07"
+output: html_document
+---
+
+# Setup
+```{R}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(dplyr)
+  library(Seurat)
+  library(patchwork)
+  library(ggplot2)
+  library(SingleR)
+  library(SingleCellExperiment)
+  library(BiocParallel)
+  library(randomcoloR)
+  library(celldex)
+  #library(iTALK)
+  library(clusterProfiler)
+  library(msigdbr)
+  library(org.Hs.eg.db)
+  library(AnnotationDbi)
+  # /satijalab/seurat-data
+})
+
+stem <- "~/altcells/singlecellseq/vitalia_scs_aro"
+fig_path <- file.path(stem, "figures_tm")
+```
+
+# Load data
+
+```{R}
+data_combined <- readRDS(file.path(stem, "processed_data/data_combined.RDS"))
+```
+
+# Sort through results
+```{r}
+deg_results <- read.csv(file.path(stem, "processed_data/deg_p_vs_control.csv"),
+                        row.names = 1, header = TRUE)
+deg_results$GeneSymbol <- toupper(rownames(deg_results))
+gene_annotations <- select(org.Hs.eg.db, keys = keys(org.Hs.eg.db, keytype = "ENTREZID"),
+                           columns = c("SYMBOL", "GENETYPE"), keytype = "ENTREZID")
+
+protein_coding_genes <- gene_annotations$SYMBOL[gene_annotations$GENETYPE == "protein-coding"]
+
+deg_results <- deg_results[deg_results$GeneSymbol %in% protein_coding_genes, ]
+
+deg_results <- deg_results[deg_results$p_val_adj <= 0.05,]
+# Extract log fold change values from the DEG results
+deg_ranks <- deg_results$avg_log2FC
+# Remove NA values (if present)
+deg_ranks <- na.omit(deg_ranks)
+names(deg_ranks) <- rownames(deg_results)
+
+# Rank genes by log2FC
+deg_ranks <- sort(deg_ranks, decreasing = TRUE)
+```
+# Perform GSEA
+```{r}
+# Download MSigDB gene sets for human
+msigdb_data <- msigdbr(species = "Homo sapiens")
+
+# Optionally, filter for a specific collection (e.g., "H" for Hallmark gene sets)
+msigdb_hallmark <- msigdb_data[msigdb_data$gs_collection == "C5", ]
+vascular_related <- msigdb_hallmark[grep("calcification|vascular|osteogenesis|smooth muscle|struct|matrix|remodel", 
+                                         msigdb_hallmark$gs_name, ignore.case = TRUE), ]
+
+# Convert gene symbols in your ranked list to uppercase
+names(deg_ranks) <- toupper(names(deg_ranks))
+
+# Ensure the gene sets in the TERM2GENE object are also uppercase
+vascular_related$gene_symbol <- toupper(vascular_related$gene_symbol)
+
+# Run GSEA using the Hallmark gene sets from MSigDB
+gsea_results <- GSEA(geneList = deg_ranks,
+                     TERM2GENE = vascular_related[, c("gs_name", "gene_symbol")],
+                     pvalueCutoff = 1, 
+                     verbose = TRUE)
+
+# View the top enriched pathways
+head(gsea_results)
+
+gsea_results_filt <- gsea_results |>
+  filter(p.adjust < 0.05) |> 
+  as.data.frame() |>
+  View()
+```
+
+# Visualize top pathways
+```{R}
+# Dot plot of the top GSEA results
+dotplot(gsea_results_filt, showCategory = 60) + ggtitle("GSEA Results")
+ggsave(file.path(fig_path, "GSEA_dotplot_hallmark.png"), width = 8, height= 20)
+
+
+# Save GSEA results to CSV
+write.csv(as.data.frame(gsea_results_filt),
+          file = file.path(fig_path, "GSEA_hallmark_results.csv"))
+```
