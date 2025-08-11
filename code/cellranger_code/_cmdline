@@ -1,0 +1,1 @@
+cellranger count --id=JA_CV_0516_3_Dtreatment --sample=JA_CV_0516_3_Dtreatment --fastqs=../2023-06-06/outs/fastq_path/,../2023-08-15/outs/fastq_path/ --transcriptome=/usr2/collab/scsdata/scscore/References/cellranger/mm10-2020-A --expect-cells=10000 --jobmode=local --localcores=16 --localmem=64
