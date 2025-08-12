@@ -779,6 +779,8 @@ ggsave(file.path(fig_folder, "dotplot_bcells.png"), saved_plot, width = 12, unit
 ```{R}
 set.seed(22)
 
+data_reclustered$SingleR.pruned <- data_reclustered$SingleR.pruned |> stringr::str_to_sentence()
+
 # Get all unique cell types from the dataset
 all_celltypes <- unique(data_reclustered$SingleR.pruned)
 palette <- distinctColorPalette(length(all_celltypes))
@@ -792,7 +794,7 @@ order_celltypes <- data_reclustered@meta.data |>
   group_by(SingleR.pruned) |>
   summarise(count = n()) |>
   arrange((count)) |>
-  pull(SingleR.pruned)
+  pull(SingleR.pruned) 
 
 plotting_data <- data_reclustered@meta.data |>
   mutate("Cell type" = factor(SingleR.pruned, levels = order_celltypes))
@@ -834,7 +836,7 @@ centroids <- input_umap_dat |>
 in_umap_shuff <- input_umap_dat[sample(nrow(input_umap_dat)), ]
   
 in_umap_shuff |>
-  mutate("Cell type" = factor(fctr_celltype, levels = order_celltypes)) |>
+  mutate("Cell type" = factor(stringr::str_to_sentence(fctr_celltype), levels = order_celltypes)) |>
   ggplot2::ggplot(aes(x = umap_1, y = umap_2,
                       colour = `Cell type`)) +
   geom_point(alpha = 0.4, size = 0.4) +
@@ -853,7 +855,21 @@ ggsave(file.path(fig_folder, "UMAP_across_trt_FIG1.png"),
        width = 6, height = 4.5)
 ```
 
-## Redo barplot from 03
+### Supplementary table 2: how many cells by cluster
+
+```{R}
+# Cluster | Cell type | number | percent of total cells in cluster
+
+s2_tab <- in_umap_shuff |>
+  mutate("Cell type" = factor(stringr::str_to_sentence(fctr_celltype), levels = order_celltypes)) |>
+  group_by(`Cluster id`, `Cell type`) |>
+  summarise(cell_count = n(), .groups = "drop_last") |>
+  mutate(percent = round((cell_count / sum(cell_count)) * 100, 2))
+
+write_csv(s2_tab, file.path(fig_folder, "s2_tab.csv"))
+```
+
+## Barplot of cell types by treatment
 
 ```{R}
 cluster_matched_cells <- tibble(cluster = Idents(data_reclustered), data_reclustered[["SingleR.pruned"]])
@@ -882,6 +898,19 @@ summary_main <- cluster_matched_cells |>
 ggsave(file.path(fig_folder, "barplot_main_labels_FIG1.png"),
         width = 9, height = 5, units = "in")
 
+```
+### Supplementary table 3: how many cells by treatment
+
+```{R}
+# Treatment | Cell type | number | percent of total cells in cluster
+
+s3_tab <- in_umap_shuff |>
+  mutate("Cell type" = factor(stringr::str_to_sentence(fctr_celltype), levels = order_celltypes)) |>
+  group_by(Treatment, `Cell type`) |>
+  summarise(cell_count = n(), .groups = "drop_last") |>
+  mutate(percent = round((cell_count / sum(cell_count)) * 100, 2))
+
+write_csv(s3_tab, file.path(fig_folder, "s3_tab.csv"))
 ```
 
 # Additional Figures (presentation)

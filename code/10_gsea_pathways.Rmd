@@ -92,11 +92,15 @@ gsea_results_filt <- gsea_results |>
 # Visualize top pathways
 ```{R}
 # Dot plot of the top GSEA results
-dotplot(gsea_results_filt, showCategory = 60) + ggtitle("GSEA Results")
-ggsave(file.path(fig_path, "GSEA_dotplot_hallmark.png"), width = 8, height= 20)
+dotplot(gsea_results |>
+  filter(p.adjust < 0.05), showCategory = 60) + ggtitle("Differentially expressed pathways (GSEA)") +
+  labs(subtitle = "All treatments")
+ggsave(file.path(fig_path, "GSEA_dotplot_hallmark.png"), width = 7, height= 4)
 
 
 # Save GSEA results to CSV
-write.csv(as.data.frame(gsea_results_filt),
-          file = file.path(fig_path, "GSEA_hallmark_results.csv"))
+gsea_results |>
+  filter(p.adjust < 0.05) |>
+  as.data.frame() |>
+  write.csv(file = file.path(fig_path, "GSEA_hallmark_results.csv"))
 ```

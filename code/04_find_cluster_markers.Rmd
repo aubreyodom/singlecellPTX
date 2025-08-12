@@ -74,15 +74,40 @@ top10_up <- all_markers %>%
   slice_head(n = 10) %>%
   ungroup()
 
+top10_all <- all_markers %>%
+  group_by(cluster) %>%
+  arrange(abs(avg_log2FC)) %>%
+  #dplyr::filter(avg_log2FC > 1) %>%
+  slice_head(n = 10) %>%
+  ungroup()
+
 # Down
 png(file.path(fig_folder, "heatmap_down.png"), units = "in", res = 300, width = 5, height = 6)
 Seurat::DoHeatmap(subset(data_labelled, downsample = 1000), features = top10_down$gene)
 dev.off()
 
-# Up
-png(file.path(fig_folder, "heatmap_up.png"), units = "in", res = 300, width = 5, height = 6)
-Seurat::DoHeatmap(subset(data_labelled, downsample = 1000), features = top10_up$gene)
+# Up - used in manuscript
+png(file.path(fig_folder, "heatmap_up.png"), units = "in", res = 300, width = 5, height = 7)
+Seurat::DoHeatmap(subset(data_labelled, downsample = 1000), features = top10_up$gene,
+                  label = FALSE) +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()) +
+  labs(title = "Top 10 up-regulated gene markers by cluster")
 dev.off()
+
+# All
+png(file.path(fig_folder, "heatmap.png"), units = "in", res = 300, width = 5, height = 6)
+Seurat::DoHeatmap(subset(data_labelled, downsample = 1000), features = top10_all$gene)
+dev.off()
+```
+
+## Supplementary Table: Cell markers
+
+```{R}
+supp_tab_markers_top20 <- bind_rows(top10_down, top10_up) |>
+  relocate(cluster, gene, p_val_adj) |>
+  arrange(cluster, abs(avg_log2FC))
+write_csv(supp_tab_markers_top20, file.path(fig_folder, "supp_tab_markers_top20.csv"))
 ```
 
 # Investigating additional cell types

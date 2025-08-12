@@ -1,0 +1,57 @@
+Treatment,Cell type,cell_count,percent
+Dtreatment,Macrophage,9,0.18
+Dtreatment,Dendritic cell,12,0.24
+Dtreatment,Stromal cell,35,0.7
+Dtreatment,Unclassified,49,0.98
+Dtreatment,Mast cell,36,0.72
+Dtreatment,Monocyte,44,0.88
+Dtreatment,Natural killer cell,97,1.94
+Dtreatment,Erythrocyte,113,2.26
+Dtreatment,T cell,103,2.06
+Dtreatment,B cell,108,2.16
+Dtreatment,Fibroblast,367,7.34
+Dtreatment,Endothelial cell,376,7.52
+Dtreatment,Leukocyte,1416,28.32
+Dtreatment,Smooth muscle cell,2235,44.7
+PDtreatment,Macrophage,2,0.05
+PDtreatment,Dendritic cell,10,0.24
+PDtreatment,Stromal cell,11,0.26
+PDtreatment,Unclassified,45,1.06
+PDtreatment,Mast cell,21,0.49
+PDtreatment,Monocyte,64,1.51
+PDtreatment,Natural killer cell,86,2.03
+PDtreatment,Erythrocyte,169,3.98
+PDtreatment,T cell,282,6.65
+PDtreatment,B cell,571,13.46
+PDtreatment,Fibroblast,338,7.97
+PDtreatment,Endothelial cell,735,17.32
+PDtreatment,Leukocyte,1210,28.52
+PDtreatment,Smooth muscle cell,699,16.47
+Ptreatment,Macrophage,3,0.06
+Ptreatment,Dendritic cell,5,0.1
+Ptreatment,Stromal cell,37,0.74
+Ptreatment,Unclassified,36,0.72
+Ptreatment,Mast cell,100,2
+Ptreatment,Monocyte,20,0.4
+Ptreatment,Natural killer cell,95,1.9
+Ptreatment,Erythrocyte,107,2.14
+Ptreatment,T cell,109,2.18
+Ptreatment,B cell,220,4.4
+Ptreatment,Fibroblast,174,3.48
+Ptreatment,Endothelial cell,302,6.04
+Ptreatment,Leukocyte,1520,30.4
+Ptreatment,Smooth muscle cell,2272,45.44
+control,Macrophage,3,0.06
+control,Dendritic cell,7,0.14
+control,Stromal cell,16,0.32
+control,Unclassified,42,0.84
+control,Mast cell,38,0.76
+control,Monocyte,84,1.68
+control,Natural killer cell,200,4
+control,Erythrocyte,144,2.88
+control,T cell,302,6.04
+control,B cell,129,2.58
+control,Fibroblast,572,11.45
+control,Endothelial cell,555,11.11
+control,Leukocyte,1338,26.78
+control,Smooth muscle cell,1566,31.35

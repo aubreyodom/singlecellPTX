@@ -1,0 +1,120 @@
+Cluster id,Cell type,cell_count,percent
+0,Macrophage,5,0.09
+0,Stromal cell,42,0.75
+0,Unclassified,14,0.25
+0,Natural killer cell,7,0.13
+0,T cell,1,0.02
+0,Fibroblast,14,0.25
+0,Smooth muscle cell,5480,98.51
+1,Stromal cell,14,0.55
+1,Unclassified,25,0.98
+1,Mast cell,2,0.08
+1,Natural killer cell,7,0.27
+1,Leukocyte,2262,88.26
+1,Smooth muscle cell,253,9.87
+2,Macrophage,4,0.33
+2,Stromal cell,2,0.17
+2,Unclassified,36,2.98
+2,Mast cell,120,9.92
+2,Natural killer cell,203,16.78
+2,Erythrocyte,2,0.17
+2,T cell,207,17.11
+2,B cell,158,13.06
+2,Endothelial cell,6,0.5
+2,Leukocyte,265,21.9
+2,Smooth muscle cell,207,17.11
+3,Macrophage,3,0.29
+3,Stromal cell,22,2.14
+3,Unclassified,22,2.14
+3,Mast cell,37,3.59
+3,Natural killer cell,111,10.78
+3,Erythrocyte,2,0.19
+3,T cell,111,10.78
+3,B cell,53,5.15
+3,Fibroblast,143,13.88
+3,Endothelial cell,6,0.58
+3,Leukocyte,513,49.81
+3,Smooth muscle cell,7,0.68
+4,Macrophage,1,0.1
+4,Dendritic cell,33,3.32
+4,Unclassified,6,0.6
+4,Mast cell,11,1.11
+4,Monocyte,212,21.35
+4,Natural killer cell,2,0.2
+4,Erythrocyte,527,53.07
+4,B cell,16,1.61
+4,Leukocyte,185,18.63
+5,Stromal cell,3,0.37
+5,Unclassified,2,0.24
+5,Mast cell,1,0.12
+5,T cell,6,0.73
+5,Fibroblast,1,0.12
+5,Leukocyte,7,0.85
+5,Smooth muscle cell,799,97.56
+6,Stromal cell,14,1.77
+6,Unclassified,3,0.38
+6,T cell,1,0.13
+6,Fibroblast,746,94.55
+6,Leukocyte,25,3.17
+7,Dendritic cell,1,0.13
+7,Unclassified,1,0.13
+7,Erythrocyte,1,0.13
+7,T cell,1,0.13
+7,B cell,1,0.13
+7,Endothelial cell,759,98.44
+7,Leukocyte,7,0.91
+8,Stromal cell,1,0.13
+8,Unclassified,6,0.79
+8,Natural killer cell,1,0.13
+8,Leukocyte,731,96.06
+8,Smooth muscle cell,22,2.89
+9,Unclassified,3,0.41
+9,Mast cell,1,0.14
+9,Natural killer cell,1,0.14
+9,T cell,3,0.41
+9,B cell,698,96.54
+9,Leukocyte,17,2.35
+10,Macrophage,4,0.59
+10,Stromal cell,1,0.15
+10,Unclassified,31,4.55
+10,Mast cell,7,1.03
+10,Natural killer cell,16,2.35
+10,Erythrocyte,1,0.15
+10,T cell,9,1.32
+10,B cell,15,2.2
+10,Endothelial cell,257,37.68
+10,Leukocyte,341,50
+11,Unclassified,18,2.72
+11,Mast cell,11,1.66
+11,Natural killer cell,57,8.61
+11,T cell,76,11.48
+11,B cell,82,12.39
+11,Endothelial cell,136,20.54
+11,Leukocyte,279,42.15
+11,Smooth muscle cell,3,0.45
+12,Unclassified,4,0.71
+12,Natural killer cell,1,0.18
+12,T cell,4,0.71
+12,B cell,1,0.18
+12,Fibroblast,547,97.5
+12,Endothelial cell,2,0.36
+12,Leukocyte,2,0.36
+13,Mast cell,1,0.18
+13,T cell,2,0.36
+13,B cell,2,0.36
+13,Endothelial cell,540,97.47
+13,Leukocyte,9,1.62
+14,Mast cell,3,0.66
+14,Natural killer cell,71,15.5
+14,T cell,375,81.88
+14,B cell,1,0.22
+14,Leukocyte,7,1.53
+14,Smooth muscle cell,1,0.22
+15,Leukocyte,445,100
+16,Leukocyte,375,100
+17,Unclassified,1,0.36
+17,Mast cell,1,0.36
+17,Natural killer cell,1,0.36
+17,B cell,1,0.36
+17,Endothelial cell,262,93.57
+17,Leukocyte,14,5
