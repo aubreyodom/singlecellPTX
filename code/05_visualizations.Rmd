@@ -880,7 +880,6 @@ summary_main <- cluster_matched_cells |>
   summarise(num_each = n()) |>
   arrange(cluster, desc(num_each))
 
-
  summary_main |>
     dplyr::mutate(proportion = num_each / sum(num_each),
                   "Cell type" = factor(SingleR.pruned, levels = order_celltypes)) |>
@@ -917,94 +916,53 @@ write_csv(s3_tab, file.path(fig_folder, "s3_tab.csv"))
 
 ## Single gene boxplots
 
-
-### PTX vs. Control
 ```{R}
-genes <- c("NOTCH1", "ICAM1", "TNF", "MGP", "HSPA12A", "TRP53", "DCN") |> str_to_sentence()
-directions <- c("Downregulated", "Downregulated", "Downregulated",
-                "Upregulated", "Downregulated", "Downregulated", "Downregulated")
-which_trts <- c("control", "Ptreatment")
+# genes <- c("SPP1", "TIMP2") |> str_to_sentence()
+# directions <- c("Downregulated", "Downregulated")
+# which_trts <- c("control", "Ptreatment")
 
-avg_mat <- AverageExpression(
-  data_reclustered,
-  features = genes,
-  group.by = c("Treatment"),
-  assays = "integrated",
-  slot = "scale.data",
-  normalization.method = "integrated",
-  scale.factor = 100,
-  layer = "scale.data"
-)$integrated |>
-  as.data.frame() |>
-  select(all_of(which_trts))
+create_gene_boxplot <- function(genes, directions, which_trts) {
+  avg_mat <- AverageExpression(
+    data_reclustered,
+    features = genes,
+    group.by = c("Treatment"),
+    assays = "integrated",
+    slot = "scale.data",
+    normalization.method = "integrated",
+    scale.factor = 100,
+    layer = "scale.data"
+  )$integrated |>
+    as.data.frame() |>
+    dplyr::select(all_of(which_trts))
+  
+  df_expr <- avg_mat |>
+    rownames_to_column("gene") |>
+    pivot_longer(-gene, names_to = "group", values_to = "mean_expression") |>
+    mutate(direction = directions[match(gene, genes)])
+  
+  # Plot
+  p <- df_expr |>
+    mutate(group = factor(group,
+                          levels = c("control", "Ptreatment", "Dtreatment", "PDtreatment"),
+                          labels = c("Control", "PTX", "DEX", "PTX + DEX"))) |>
+    ggplot(aes(x = gene, y = mean_expression)) +
+    geom_bar(stat = "identity", position = position_dodge(),
+             fill = "steelblue") +
+    facet_wrap(~ group) +
+    labs(title = "Gene Expression by Treatment Group",
+         y = "Average Scaled Expression",
+         x = "Gene") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 20, hjust = 1))
+  print(p)
+  ggsave(file.path(fig_folder, paste("deg_barplot_calcific.png", sep = "_")),
+         p, units = "in", width = 4, height = 4)
+}
 
-df_expr <- avg_mat |>
-  rownames_to_column("gene") |>
-  pivot_longer(-gene, names_to = "group", values_to = "mean_expression") |>
-  mutate(direction = directions[match(gene, genes)])
 
-# Plot
-ggplot(df_expr, aes(x = gene, y = mean_expression, fill = direction)) +
-  geom_bar(stat = "identity", position = position_dodge()) +
-  facet_wrap(~ group) +
-  labs(title = "Gene Expression by Treatment Group",
-       y = "Average Scaled Expression",
-       x = "Gene",
-       fill = "DE Direction") +
-  scale_fill_manual(values = c("Upregulated" = "firebrick", "Downregulated" = "steelblue")) +
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 20, hjust = 1))
-
-
-ggsave(file.path(fig_folder, "deg_barplot_ptx_control_calcific.png"),
-       units = "in", width = 8, height = 3)
+# Control vs. other treatments
+create_gene_boxplot(genes = c("SPP1", "TIMP2") |> str_to_sentence(),
+                    directions = c("Downregulated", "Downregulated"),
+                    which_trts = c("control", "Ptreatment", "PDtreatment", "Dtreatment"))
 ```
-
-### PTX + DEX
-
-```{R}
-
-genes <- c("HSPA1A", "IL1B", "TNF", "MGP", "Notch1",
-           "DCN") |> str_to_sentence()
-directions <- c("Downregulated", "Upregulated", "Upregulated",
-                "Downregulated", "Upregulated",
-                "Downregulated")
-which_trts <- c("control", "PDtreatment")
-
-avg_mat <- AverageExpression(
-  data_reclustered,
-  features = genes,
-  group.by = c("Treatment"),
-  assays = "integrated",
-  slot = "scale.data",
-  normalization.method = "integrated",
-  scale.factor = 100,
-  layer = "scale.data"
-)$integrated |>
-  as.data.frame() |>
-  select(all_of(which_trts))
-
-df_expr <- avg_mat |>
-  rownames_to_column("gene") |>
-  pivot_longer(-gene, names_to = "group", values_to = "mean_expression") |>
-  mutate(direction = directions[match(gene, genes)])
-
-# Plot
-ggplot(df_expr, aes(x = gene, y = mean_expression, fill = direction)) +
-  geom_bar(stat = "identity", position = position_dodge()) +
-  facet_wrap(~ group) +
-  labs(title = "Gene Expression by Treatment Group",
-       y = "Average Scaled Expression",
-       x = "Gene",
-       fill = "DE Direction") +
-  scale_fill_manual(values = c("Upregulated" = "firebrick", "Downregulated" = "steelblue")) +
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 20, hjust = 1))
-
-
-ggsave(file.path(fig_folder, "deg_barplot_ptxdex_control_calcific.png"),
-       units = "in", width = 8, height = 3)
-
-```
-
 

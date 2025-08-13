@@ -49,9 +49,14 @@ sig_names <- c("HP_THORACIC_AORTA_CALCIFICATION",
   "HP_CARDIOVASCULAR_CALCIFICATION"
   )
 
+sig_names_fixed <- sig_names |>
+  stringr::str_replace_all("_", " ") |>
+  stringr::str_remove_all("HP ") |>
+  stringr::str_to_sentence()
+
 calc_sigs <- sig_names |>
   plyr::alply(1, make_sig_list) |>
-  set_names(sig_names)
+  set_names(sig_names_fixed)
 
 sigs_in <- unique(unlist(calc_sigs))
 new_counts <- data_reclustered@assays$integrated$scale.data
@@ -96,37 +101,32 @@ colData(outsig_x2) <- cbind(colData(outsig_x2),
                                 colData(SE_rec))
 ```
 
-# Signature boxplot
-```{R}
-all_sigs <- paste(c("PLAGE"), names(calc_sigs),
-                  sep = "_") |>
-  append(paste(c("ssGSEA"), names(calc_sigs),
-                  sep = "_"))
-  
-
-new_df <- data.frame(Trt = colData(SE_rec)$Treatment)
-rownames(new_df) <- rownames(colData(SE_rec))
-
-# make numeric
-in_dat <- as.data.frame(colData(outsig_x2))[, all_sigs]
-
-signatureBoxplot(inputData = in_dat,
-                 annotationData = new_df,
-                 signatureColNames = all_sigs,
-                 scale = TRUE)
-
-ggsave(file.path(fig_folder, "sigs_boxplot.png"),
-       units = "in", width = 12, height = 7)
-```
-
-
 # Compare boxplots
 
-## new
+## Create renamed treatment groups function
+
+```{R}
+rename_trt <- function(this_treatment) {
+  if (this_treatment == "control") return("Control")
+  if (this_treatment == "Ptreatment") return("PTX")
+  if (this_treatment == "Dtreatment") return("DEX")
+  if (this_treatment == "PDtreatment") return("PTX + DEX")
+}
+
+dot_names <- stringr::str_replace_all(names(calc_sigs), " ", ".")
+all_sigs <- paste(c("PLAGE"), dot_names,
+                  sep = "_") |>
+  append(paste(c("ssGSEA"), dot_names,
+                  sep = "_"))
+  
+```
+
+## Create boxplots
 ```{R}
 # Define all treatment combinations
-treatments <- c("PDtreatment", "Ptreatment", "Dtreatment", "control")
-combinations <- combn(treatments, 2, simplify = FALSE)
+combinations <- list(c("control", "Ptreatment"),
+                     c("control", "PDtreatment"),
+                     c("control", "Dtreatment"))
 
 # Loop through each pairwise combination
 for (combo in combinations) {
@@ -143,39 +143,31 @@ for (combo in combinations) {
   se_filtered <- outsig_x2[, filtered_samples]
   
   # Generate the boxplot
-  compareBoxplots(
+  p <- compareBoxplots(
     SE_scored = se_filtered,
     annotationColName = "Treatment",
     signatureColNames = all_sigs,
-    pb.show = FALSE,
-    rotateLabels = TRUE
-  )
+    pb.show = TRUE,
+    rotateLabels = TRUE,
+    fill.col = "steelblue",
+    outline.col = "grey15",
+    num.boot = 100
+  ) +
+    labs(x = "Calcification gene signatures",
+         title = "Bootstrapped signature AUC scores",
+         subtitle = paste(rename_trt(treatment1), "vs.", rename_trt(treatment2))) +
+    theme(
+    axis.text.x = element_text(angle = 70, hjust = 1)
+  ) +
+    scale_y_continuous(limits = c(0.5, 0.7))
   
-  # Save the plot with a unique filename
+  print(p)
+  
   filename <- paste0("gsea_compare_boxplots_", treatment1, "_vs_", treatment2, ".png")
-  ggsave(file.path(fig_folder, filename), units = "in", width = 6, height = 9)
+  ggsave(file.path(fig_folder, filename), units = "in", width = 5, height = 5)
 }
+ 
 ```
-
-## old
-```{R}
-# Limit treatment to PTX vs. Control
-filtered_samples <- colData(outsig_x2) %>%
-  as.data.frame() %>%
-  filter(Treatment %in% c("Ptreatment", "PDtreatment")) %>%
-  rownames()
-
-se_filtered <- outsig_x2[, filtered_samples]
-
-compareBoxplots(SE_scored = se_filtered,
-                annotationColName = "Treatment",
-                signatureColNames = all_sigs,
-                pb.show = FALSE, rotateLabels = TRUE)
-
-ggsave(file.path(fig_folder, "gsea_compare_boxplots.png"),
-       units = "in", width = 6, height = 9)
-```
-
 # Print AUC tables
 
 ```{R}
@@ -286,4 +278,22 @@ aucs_subset <- all_aucs |>
   dplyr::select(Signature, pval_sci, AUC, cluster)
 
 write.csv(aucs_subset, file.path(fig_folder, "subset_GSEA_control_P_AUC.csv"))
+```
+
+# Signature boxplot
+```{R}
+
+new_df <- data.frame(Trt = colData(SE_rec)$Treatment)
+rownames(new_df) <- rownames(colData(SE_rec))
+
+# make numeric
+in_dat <- as.data.frame(colData(outsig_x2))[, all_sigs]
+
+signatureBoxplot(inputData = in_dat,
+                 annotationData = new_df,
+                 signatureColNames = all_sigs,
+                 scale = TRUE)
+
+ggsave(file.path(fig_folder, "sigs_boxplot.png"),
+       units = "in", width = 12, height = 7)
 ```
