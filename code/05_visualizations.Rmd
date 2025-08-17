@@ -935,6 +935,8 @@ create_gene_boxplot <- function(genes, directions, which_trts) {
     as.data.frame() |>
     dplyr::select(all_of(which_trts))
   
+  if (rownames(avg_mat) == "1") rownames(avg_mat) <- genes[1]
+  
   df_expr <- avg_mat |>
     rownames_to_column("gene") |>
     pivot_longer(-gene, names_to = "group", values_to = "mean_expression") |>
@@ -948,6 +950,7 @@ create_gene_boxplot <- function(genes, directions, which_trts) {
     ggplot(aes(x = gene, y = mean_expression)) +
     geom_bar(stat = "identity", position = position_dodge(),
              fill = "steelblue") +
+    geom_hline(yintercept = 0, color = "black", linetype = "dotted") +
     facet_wrap(~ group) +
     labs(title = "Gene Expression by Treatment Group",
          y = "Average Scaled Expression",
@@ -956,13 +959,13 @@ create_gene_boxplot <- function(genes, directions, which_trts) {
     theme(axis.text.x = element_text(angle = 20, hjust = 1))
   print(p)
   ggsave(file.path(fig_folder, paste("deg_barplot_calcific.png", sep = "_")),
-         p, units = "in", width = 4, height = 4)
+         p, units = "in", width = 6, height = 4)
 }
 
 
 # Control vs. other treatments
-create_gene_boxplot(genes = c("SPP1", "TIMP2") |> str_to_sentence(),
-                    directions = c("Downregulated", "Downregulated"),
+create_gene_boxplot(genes = c("MMP9") |> str_to_sentence(),
+                    directions = c("Downregulated"),
                     which_trts = c("control", "Ptreatment", "PDtreatment", "Dtreatment"))
 ```
 
